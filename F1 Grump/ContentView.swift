@@ -51,6 +51,7 @@ struct ContentView: View {
     @State private var allTracks = TrackAssets.allNames()
     @State private var selectedTrack: String = ""
     @State private var outlineSegments: [[CGPoint]] = []
+    @StateObject private var circuitFetcher = CircuitImageFetcher()
 
     @State private var demoDamage: [String: CGFloat] = [
         "front_wing_left": 0.2,
@@ -103,6 +104,10 @@ struct ContentView: View {
                 let fallback = allTracks.contains("gb-1948") ? "gb-1948" : (allTracks.first ?? "")
                 selectedTrack = fallback
                 outlineSegments = loadGeoJSONOutline(named: fallback)
+            }
+            // Kick off fetching the F1.com circuit image for fallback display
+            if let url = URL(string: "https://www.formula1.com/en/racing/2025/italy") {
+                circuitFetcher.fetch(from: url)
             }
             #if DEBUG
             if designPreview {
@@ -181,11 +186,19 @@ struct ContentView: View {
                         // Height keeps the map square based on width, letting TrackOutlineMap scale
                         VStack { Spacer(minLength: 0) }
                             .frame(width: g.size.width, height: g.size.height, alignment: .top)
-                        TrackOutlineMap(
-                            segments: outlineSegments,
-                            carPoints: rx.carPoints,
-                            playerIndex: rx.playerCarIndex
-                        )
+                        ZStack {
+                            TrackOutlineMap(
+                                segments: outlineSegments,
+                                carPoints: rx.carPoints,
+                                playerIndex: rx.playerCarIndex
+                            )
+                            if let ui = circuitFetcher.image {
+                                Image(uiImage: ui)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .opacity(outlineSegments.isEmpty ? 1 : 0) // show as fallback only
+                            }
+                        }
                         .frame(width: w, height: w)
                         .position(x: g.size.width / 2, y: g.size.height / 2)
                     }
