@@ -45,11 +45,23 @@ final class TrackSVGContainer: UIView {
         if url == nil {
             url = bestMatchURL(for: name)
         }
-        guard let url else { return }
+        guard let url else {
+            #if DEBUG
+            print("⚠️ TrackSVGView: SVG not found for '", name, "' under assets/track outlines")
+            let files = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: "assets/track outlines")?.map { $0.lastPathComponent } ?? []
+            print("Available track SVGs:", files)
+            #endif
+            return
+        }
 
         // Parse paths
         let paths = SVGBezierPath.pathsFromSVG(at: url)
-        guard !paths.isEmpty else { return }
+        guard !paths.isEmpty else {
+            #if DEBUG
+            print("⚠️ TrackSVGView: SVG had no paths at", url)
+            #endif
+            return
+        }
 
         // Merge into layers
         for p in paths {
