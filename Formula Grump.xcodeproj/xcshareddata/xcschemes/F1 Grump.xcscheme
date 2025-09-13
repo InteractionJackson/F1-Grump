@@ -18,7 +18,7 @@
                BlueprintIdentifier = "6E7134242E730F2E00B781B7"
                BuildableName = "F1 Grump.app"
                BlueprintName = "F1 Grump"
-               ReferencedContainer = "container:F1 Grump.xcodeproj">
+               ReferencedContainer = "container:Formula Grump.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -38,7 +38,7 @@
                BlueprintIdentifier = "6E7134342E730F2F00B781B7"
                BuildableName = "F1 GrumpTests.xctest"
                BlueprintName = "F1 GrumpTests"
-               ReferencedContainer = "container:F1 Grump.xcodeproj">
+               ReferencedContainer = "container:Formula Grump.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -49,7 +49,7 @@
                BlueprintIdentifier = "6E71343E2E730F2F00B781B7"
                BuildableName = "F1 GrumpUITests.xctest"
                BlueprintName = "F1 GrumpUITests"
-               ReferencedContainer = "container:F1 Grump.xcodeproj">
+               ReferencedContainer = "container:Formula Grump.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -71,7 +71,7 @@
             BlueprintIdentifier = "6E7134242E730F2E00B781B7"
             BuildableName = "F1 Grump.app"
             BlueprintName = "F1 Grump"
-            ReferencedContainer = "container:F1 Grump.xcodeproj">
+            ReferencedContainer = "container:Formula Grump.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <EnvironmentVariables>
@@ -95,7 +95,7 @@
             BlueprintIdentifier = "6E7134242E730F2E00B781B7"
             BuildableName = "F1 Grump.app"
             BlueprintName = "F1 Grump"
-            ReferencedContainer = "container:F1 Grump.xcodeproj">
+            ReferencedContainer = "container:Formula Grump.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
