@@ -297,8 +297,10 @@ private struct BoxedTime: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.tileBG)
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.tileBorder, lineWidth: 1)
                 Text(fmtLap(timeMS))
                     .font(.titleEmphasised)
                     .monospacedDigit()
@@ -355,14 +357,16 @@ private struct SmallBoxedTime: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.tileBG)
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.tileBorder, lineWidth: 1)
                 Text(fmtLap(timeMS))
                     .font(.body18)
                     .monospacedDigit()
                     .foregroundColor(.textPrimary)
             }
-            .frame(height: 48)
+            .frame(height: 32)
             Text(titleBelow)
                 .font(.gaugeLabel)
                 .foregroundColor(.labelEmphasised)
@@ -378,14 +382,16 @@ private struct SectorBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.tileBG)
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.tileBorder, lineWidth: 1)
                 Text(timeMS > 0 ? fmtLap(timeMS) : "—:—.—")
                     .font(.body18)
                     .monospacedDigit()
                     .foregroundColor(color)
             }
-            .frame(height: 40)
+            .frame(height: 32)
             Text(titleBelow)
                 .font(.gaugeLabel)
                 .foregroundColor(.gaugeLabel)
@@ -479,14 +485,21 @@ struct SpeedRpmTile: View {
             // Top row: Speed box, Gear box, DRS toggle
             HStack(alignment: .center, spacing: 16) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
-                    HStack {
+                    // Inner tile style: bg 3% white, 1pt 8% white border, 8pt radius
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.tileBG)
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.tileBorder, lineWidth: 1)
+                    HStack(spacing: 8) {
+                        Text("MPH")
+                            .font(.gaugeLabel)
+                            .foregroundColor(.labelEmphasised)
+                            .kerning(0.9)
+                        Spacer()
                         Text("\(Int(rx.speedKmh))")
                             .font(.titleEmphasised)
                             .monospacedDigit()
                             .foregroundColor(.textPrimary)
-                        Spacer()
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 4)
@@ -495,22 +508,44 @@ struct SpeedRpmTile: View {
 
                 VStack(spacing: 8) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
-                        Text(gearText)
-                            .font(.body18)
-                            .foregroundColor(.textPrimary)
-                            .frame(maxWidth: .infinity)
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.tileBG)
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.tileBorder, lineWidth: 1)
+                        HStack {
+                            Text("Gear")
+                                .font(.gaugeLabel)
+                                .foregroundColor(.labelEmphasised)
+                                .kerning(0.9)
+                            Spacer()
+                            Text(gearText)
+                                .font(.body18)
+                                .kerning(1.62)
+                                .foregroundColor(.textPrimary)
+                        }
+                        .padding(.horizontal, 12)
                     }
-                    .frame(height: 48)
+                    .frame(height: 32)
 
-                    Text("DRS")
-                        .font(.body18)
-                        .foregroundColor(rx.drsOpen ? .drsOpenText : .textPrimary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background((rx.drsOpen ? Color.drsOpenBG : Color.buttonBGDefault), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1))
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(rx.drsOpen ? Color.drsOpenBG : Color.tileBG)
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.tileBorder, lineWidth: 1)
+                        HStack {
+                            Text("DRS")
+                                .font(.gaugeLabel)
+                                .foregroundColor(rx.drsOpen ? .drsOpenText : .labelEmphasised)
+                                .kerning(0.9)
+                            Spacer()
+                            Text(rx.drsOpen ? "OPEN" : "CLOSED")
+                                .font(.body18)
+                                .kerning(1.62)
+                                .foregroundColor(rx.drsOpen ? .drsOpenText : .textPrimary)
+                        }
+                        .padding(.horizontal, 12)
+                    }
+                    .frame(height: 32)
                 }
                 .frame(width: 220)
             }
