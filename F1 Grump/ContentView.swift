@@ -165,10 +165,10 @@ struct ContentView: View {
         GeometryReader { colGeo in
             let spacing: CGFloat = 16
             let hAvailable = colGeo.size.height - spacing
-            let hTop = hAvailable * 0.40
-            let hBottom = hAvailable * 0.60
+            let hTop = hAvailable * 0.30
+            let hBottom = hAvailable * 0.70
             VStack(alignment: .leading, spacing: spacing) {
-                Card(title: "Player lap splits", height: hTop) {
+                Card(title: "Splits", height: hTop) {
                     LapSplitsView(rx: rx)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
@@ -224,21 +224,21 @@ struct LapSplitsView: View {
     @ObservedObject var rx: TelemetryReceiver
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Current: ").foregroundColor(.textSecondary)
-                Text(fmtLap(rx.currentLapMS)).monospacedDigit()
-                Spacer()
-                Text("Best: ").foregroundColor(.textSecondary)
-                Text(fmtLap(rx.bestLapMS)).monospacedDigit()
+        VStack(alignment: .leading, spacing: 16) {
+            // Top row: current lap box on the left, last/best on the right
+            HStack(spacing: 16) {
+                BoxedTime(titleBelow: "CURRENT LAP", timeMS: rx.currentLapMS)
+                    .frame(maxWidth: .infinity)
+
+                VStack(spacing: 16) {
+                    SmallBoxedTime(titleBelow: "LAST", timeMS: rx.lastLapMS)
+                    SmallBoxedTime(titleBelow: "BEST", timeMS: rx.bestLapMS)
+                }
+                .frame(width: 320)
             }
-            HStack {
-                Text("Last: ").foregroundColor(.textSecondary)
-                Text(fmtLap(rx.lastLapMS)).monospacedDigit()
-                Spacer()
-                Text("Lap \(rx.lapNumber)").foregroundColor(.textSecondary)
-            }
-            HStack(spacing: 10) {
+
+            // Bottom row: three sector boxes
+            HStack(spacing: 16) {
                 let current = rx.sectorMS
                 let last    = rx.lastSectorMS
                 let best    = rx.bestSectorMS
@@ -252,10 +252,79 @@ struct LapSplitsView: View {
                 let s2Color: Color = (s2Shown > 0 && overall[1] > 0 && s2Shown <= overall[1]) ? .sectorFastest : ((best[1] > 0 && s2Shown <= best[1]) ? .sectorPersonal : (s2Shown > 0 ? .sectorOver : .textPrimary))
                 let s3Color: Color = (s3Shown > 0 && overall[2] > 0 && s3Shown <= overall[2]) ? .sectorFastest : ((best[2] > 0 && s3Shown <= best[2]) ? .sectorPersonal : (s3Shown > 0 ? .sectorOver : .textPrimary))
 
-                SectorPill(label: "S1", ms: s1Shown, color: s1Color)
-                SectorPill(label: "S2", ms: s2Shown, color: s2Color)
-                SectorPill(label: "S3", ms: s3Shown, color: s3Color)
+                SectorBox(titleBelow: "SECTOR 1", timeMS: s1Shown, color: s1Color)
+                SectorBox(titleBelow: "SECTOR 2", timeMS: s2Shown, color: s2Color)
+                SectorBox(titleBelow: "SECTOR 3", timeMS: s3Shown, color: s3Color)
             }
+        }
+    }
+}
+
+// MARK: - Splits helpers
+
+private struct BoxedTime: View {
+    let titleBelow: String
+    let timeMS: Int
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                Text(fmtLap(timeMS))
+                    .font(.titleEmphasised)
+                    .monospacedDigit()
+                    .foregroundColor(.textPrimary)
+            }
+            .frame(height: 120)
+            Text(titleBelow)
+                .font(.gaugeLabel)
+                .foregroundColor(.gaugeLabel)
+                .kerning(1.08)
+        }
+    }
+}
+
+private struct SmallBoxedTime: View {
+    let titleBelow: String
+    let timeMS: Int
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                Text(fmtLap(timeMS))
+                    .font(.body18)
+                    .monospacedDigit()
+                    .foregroundColor(.textPrimary)
+            }
+            .frame(height: 48)
+            Text(titleBelow)
+                .font(.gaugeLabel)
+                .foregroundColor(.gaugeLabel)
+                .kerning(1.08)
+        }
+    }
+}
+
+private struct SectorBox: View {
+    let titleBelow: String
+    let timeMS: Int
+    let color: Color
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                Text(timeMS > 0 ? fmtLap(timeMS) : "—:—.—")
+                    .font(.body18)
+                    .monospacedDigit()
+                    .foregroundColor(color)
+            }
+            .frame(height: 56)
+            Text(titleBelow)
+                .font(.gaugeLabel)
+                .foregroundColor(.gaugeLabel)
+                .kerning(1.08)
         }
     }
 }
@@ -380,16 +449,11 @@ struct SpeedRpmTile: View {
                 .frame(width: 220)
             }
 
-            // MPH full-width gradient gauge
-            GaugeBar(label: "MPH",
-                     value: min(max(rx.speedKmh * 0.621371 / 240.0, 0), 1),
-                     gradient: LinearGradient(colors: [Color.cyan, Color.green, Color.red], startPoint: .leading, endPoint: .trailing))
-            .padding(.top, 24)
-
-            // RPM full-width row
+            // RPM full-width row (spaced from the speed row)
             GaugeBar(label: "RPM",
                      value: min(max(rx.rpm / rpmRedline, 0), 1),
                      gradient: LinearGradient(colors: [Color.red, Color.yellow], startPoint: .leading, endPoint: .trailing))
+            .padding(.top, 24)
 
             // ERS and Fuel 50/50 row
             HStack(spacing: 16) {
