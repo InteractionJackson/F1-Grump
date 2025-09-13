@@ -349,7 +349,7 @@ struct SpeedRpmTile: View {
                 }
                 .frame(height: 96)
 
-                VStack(spacing: 12) {
+                VStack(spacing: 8) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 10)
                             .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
@@ -374,21 +374,24 @@ struct SpeedRpmTile: View {
             GaugeBar(label: "MPH",
                      value: min(max(rx.speedKmh * 0.621371 / 240.0, 0), 1),
                      gradient: LinearGradient(colors: [Color.cyan, Color.green, Color.red], startPoint: .leading, endPoint: .trailing))
+            .padding(.top, 24)
 
             // Bottom row: RPM (left), ERS and Fuel (right)
             HStack(spacing: 16) {
                 GaugeBar(label: "RPM",
                          value: min(max(rx.rpm / rpmRedline, 0), 1),
                          gradient: LinearGradient(colors: [Color.red, Color.yellow], startPoint: .leading, endPoint: .trailing))
+                    .layoutPriority(1)
 
                 VStack(spacing: 16) {
                     GaugeBar(label: "ERS",
                              value: min(max(rx.ersPercent, 0), 1),
-                             gradient: LinearGradient(colors: [Color.green], startPoint: .leading, endPoint: .trailing))
+                             gradient: LinearGradient(colors: [Color.red, Color.yellow], startPoint: .leading, endPoint: .trailing))
                     GaugeBar(label: "FUEL",
                              value: min(max(rx.fuelPercent, 0), 1),
-                             gradient: LinearGradient(colors: [Color.green], startPoint: .leading, endPoint: .trailing))
+                             gradient: LinearGradient(colors: [Color.red, Color.green], startPoint: .leading, endPoint: .trailing))
                 }
+                .frame(width: 320)
             }
         }
         .foregroundColor(.white)
