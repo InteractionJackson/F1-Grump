@@ -38,6 +38,7 @@ extension Color {
     static let headerBG          = Color.p3(0.08, 0.06, 0.13, 0.85)
     static let headerBorder      = Color.p3(0, 0, 0, 0.35)
     static let headerIcon        = Color.white
+    static let headerButtonBorder = Color.p3(0.325, 0.239, 0.401) // #533D66
 }
 
 // A clean tile modifier that matches your CSS-like spec

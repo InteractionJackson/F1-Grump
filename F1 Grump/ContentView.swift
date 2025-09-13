@@ -87,11 +87,7 @@ struct ContentView: View {
                 .padding(24)
             }
         }
-        .background(
-            LinearGradient(colors: [.appGradientTop, .appGradientBottom],
-                           startPoint: .top, endPoint: .bottom)
-            .ignoresSafeArea()
-        )
+        .background(Color.headerBG.ignoresSafeArea())
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
@@ -429,16 +425,26 @@ struct HeaderView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(title)
-                .font(.custom("Inter", size: 22).weight(.semibold))
-                .foregroundColor(.textPrimary)
+            HStack(spacing: 8) {
+                if UIImage(named: "AppLogo") != nil { Image("AppLogo").resizable().scaledToFit().frame(height: 24) }
+                Text(title)
+                    .font(.custom("Inter", size: 22).weight(.semibold))
+                    .foregroundColor(.textPrimary)
+            }
             Spacer()
             Button(action: onSettings) {
-                Image(systemName: "gearshape")
-                    .imageScale(.large)
-                    .foregroundColor(.headerIcon)
-                    .padding(8)
-                    .background(Color.white.opacity(0.08), in: Circle())
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape")
+                        .imageScale(.medium)
+                        .foregroundColor(.headerIcon)
+                    Text("Settings")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                }
+                .frame(width: 124, height: 32)
+                .background(Color.white.opacity(0.06))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.headerButtonBorder, lineWidth: 1))
+                .cornerRadius(8)
             }
             .buttonStyle(.plain)
         }
