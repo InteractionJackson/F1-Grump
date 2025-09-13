@@ -156,8 +156,14 @@ struct ContentView: View {
                 }
 
                 Card(title: "Speed, RPM, DRS & Gear", height: hBottom) {
-                    SpeedRpmTile(rx: rx, rpmRedline: 12000)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    GeometryReader { inner in
+                        ScrollView(.vertical, showsIndicators: false) {
+                            SpeedRpmTile(rx: rx, rpmRedline: 12000)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .padding(.bottom, 1) // avoid cut-off shadows
+                        }
+                        .frame(width: inner.size.width, height: inner.size.height)
+                    }
                 }
             }
         }
@@ -444,6 +450,7 @@ struct SpeedRpmTile: View {
                         Spacer()
                     }
                     .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
                 }
                 .frame(height: 96)
 
