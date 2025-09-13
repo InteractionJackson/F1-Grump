@@ -253,8 +253,8 @@ struct LapSplitsView: View {
         GeometryReader { geo in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Top row: current lap box (70%) containing sector splits inside
-                    HStack(spacing: 16) {
+                    // Top row: current lap box (100%) containing sector splits inside
+                    VStack(spacing: 0) {
                         let current = rx.sectorMS
                         let last    = rx.lastSectorMS
                         let best    = rx.bestSectorMS
@@ -271,9 +271,7 @@ struct LapSplitsView: View {
                         CurrentLapBox(timeMS: rx.currentLapMS,
                                       s1: s1Shown, s2: s2Shown, s3: s3Shown,
                                       c1: s1Color, c2: s2Color, c3: s3Color)
-                            .frame(width: geo.size.width * 0.70)
-
-                        Spacer(minLength: 0)
+                            .frame(maxWidth: .infinity)
                     }
 
                     // Bottom row: LAST and BEST side-by-side (50/50)
