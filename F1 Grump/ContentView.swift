@@ -584,7 +584,7 @@ struct HeaderView: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                AppLogoView().frame(height: 24)
+                AppLogoView().frame(height: 32)
                 if !title.isEmpty {
                     Text(title)
                         .font(.custom("Inter", size: 22).weight(.semibold))
