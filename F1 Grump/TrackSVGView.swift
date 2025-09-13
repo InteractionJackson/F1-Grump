@@ -6,28 +6,39 @@ struct TrackSVGView: UIViewRepresentable {
     /// Pass a filename without extension (e.g. "gb-1948").
     /// We look in bundle subdirectory "assets/track outlines" or at root.
     let filename: String
+    var carPoints: [CGPoint] = []      // normalized 0..1
+    var playerIndex: Int = 0
 
     func makeUIView(context: Context) -> TrackSVGContainer {
         let v = TrackSVGContainer()
         v.backgroundColor = .clear
         v.loadSVG(named: filename)
+        v.setCarPoints(carPoints, playerIndex: playerIndex)
         return v
     }
 
     func updateUIView(_ uiView: TrackSVGContainer, context: Context) {
         uiView.loadSVG(named: filename)
+        uiView.setCarPoints(carPoints, playerIndex: playerIndex)
     }
 }
 
 final class TrackSVGContainer: UIView {
     private var baseLayer = CALayer()
     private var layers: [CAShapeLayer] = []
+    private let dotsLayer = CAShapeLayer()
+    private var normalizedPoints: [CGPoint] = []
+    private var playerIdx: Int = 0
     private var currentName = ""
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false
         layer.addSublayer(baseLayer)
+        dotsLayer.fillColor = UIColor.white.cgColor
+        dotsLayer.strokeColor = UIColor.black.withAlphaComponent(0.35).cgColor
+        dotsLayer.lineWidth = 1
+        baseLayer.addSublayer(dotsLayer)
         contentMode = .redraw
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -69,15 +80,21 @@ final class TrackSVGContainer: UIView {
         for p in paths {
             let shape = CAShapeLayer()
             shape.path = p.cgPath
-            shape.fillColor = UIColor.clear.cgColor
-            shape.strokeColor = UIColor.white.cgColor
-            shape.lineWidth = 16
+            shape.fillColor = UIColor.white.cgColor
+            shape.strokeColor = UIColor.clear.cgColor
+            shape.lineWidth = 0
             shape.lineJoin = .round
             shape.lineCap = .round
             baseLayer.addSublayer(shape)
             layers.append(shape)
         }
         setNeedsLayout()
+    }
+
+    func setCarPoints(_ pts: [CGPoint], playerIndex: Int) {
+        normalizedPoints = pts
+        playerIdx = playerIndex
+        renderDots()
     }
 
     private func bestMatchURL(for hint: String) -> URL? {
@@ -122,6 +139,23 @@ final class TrackSVGContainer: UIView {
         guard union.width > 0, union.height > 0 else { return }
         let t = aspectFitTransform(for: union, in: bounds)
         for l in layers { l.setAffineTransform(t) }
+        renderDots()
+    }
+
+    private func renderDots() {
+        // Build a path of small circles from normalized 0..1 points
+        let path = UIBezierPath()
+        let rOthers: CGFloat = 3
+        let rPlayer: CGFloat = 5
+        for (i, p) in normalizedPoints.enumerated() {
+            let x = bounds.minX + CGFloat(p.x) * bounds.width
+            let y = bounds.minY + (1 - CGFloat(p.y)) * bounds.height
+            let r = (i == playerIdx) ? rPlayer : rOthers
+            let rect = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
+            path.append(UIBezierPath(ovalIn: rect))
+        }
+        dotsLayer.path = path.cgPath
+        dotsLayer.opacity = normalizedPoints.isEmpty ? 0 : 1
     }
 }
 

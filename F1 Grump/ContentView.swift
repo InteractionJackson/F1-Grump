@@ -182,18 +182,13 @@ struct ContentView: View {
                         let w = g.size.width * 0.80
                         ZStack {
                             // Prefer new SVG assets, fallback to geojson, then to fetched PNG
-                            TrackSVGView(filename: selectedTrack.isEmpty ? "Silverstone" : selectedTrack)
+                            TrackSVGView(
+                                filename: selectedTrack.isEmpty ? "Silverstone" : selectedTrack,
+                                carPoints: rx.carPoints,
+                                playerIndex: rx.playerCarIndex
+                            )
                                 .opacity(1)
-                            if outlineSegments.isEmpty {
-                                EmptyView()
-                            } else {
-                                TrackOutlineMap(
-                                    segments: outlineSegments,
-                                    carPoints: rx.carPoints,
-                                    playerIndex: rx.playerCarIndex
-                                )
-                                .opacity(0) // hidden when using SVG assets
-                            }
+                            EmptyView() // legacy GeoJSON layer removed from view
                             if let ui = circuitFetcher.image, outlineSegments.isEmpty {
                                 Image(uiImage: ui)
                                     .resizable()
