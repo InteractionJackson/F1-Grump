@@ -135,24 +135,26 @@ struct ContentView: View {
 
     @ViewBuilder
     private func leftColumn() -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Card(title: "Car condition & damage", height: 480) {
-                ZStack {
-                    DamageSVGView(filename: "car_overlay", damage: demoDamage)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .aspectRatio(contentMode: .fit)
-
-                    // Sample overlay HUD – replace with live data when ready
-                    let temps = rx.tyreInnerTemps.map { Int($0) }
-                    let cond  = [98, 98, 98, 98]
-                    TyreHUD(temps: rx.tyreInnerTemps, condition: rx.tyreWear)
+        GeometryReader { colGeo in
+            let spacing: CGFloat = 16
+            let hAvailable = colGeo.size.height - spacing
+            let hTop = hAvailable * 0.60
+            let hBottom = hAvailable * 0.40
+            VStack(alignment: .leading, spacing: spacing) {
+                Card(title: "Car condition & damage", height: hTop) {
+                    ZStack {
+                        DamageSVGView(filename: "car_overlay", damage: demoDamage)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .aspectRatio(contentMode: .fit)
+                        TyreHUD(temps: rx.tyreInnerTemps, condition: rx.tyreWear)
+                    }
                 }
-            }
 
-            Card(title: "Speed, RPM, DRS & Gear", height: 272) {
-                SpeedRpmTile(rx: rx, rpmRedline: 12000)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                Card(title: "Speed, RPM, DRS & Gear", height: hBottom) {
+                    SpeedRpmTile(rx: rx, rpmRedline: 12000)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
             }
         }
     }
@@ -160,17 +162,24 @@ struct ContentView: View {
     // MARK: Right column
     @ViewBuilder
     private func rightColumn() -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Card(title: "Player lap splits", height: 180) {
-                LapSplitsView(rx: rx)
-            }
+        GeometryReader { colGeo in
+            let spacing: CGFloat = 16
+            let hAvailable = colGeo.size.height - spacing
+            let hTop = hAvailable * 0.40
+            let hBottom = hAvailable * 0.60
+            VStack(alignment: .leading, spacing: spacing) {
+                Card(title: "Player lap splits", height: hTop) {
+                    LapSplitsView(rx: rx)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
 
-            Card(title: "Track position (overhead)", height: 480) {
-                TrackOutlineMap(
-                    segments: outlineSegments,
-                    carPoints: rx.carPoints,
-                    playerIndex: rx.playerCarIndex
-                )
+                Card(title: "Track position (overhead)", height: hBottom) {
+                    TrackOutlineMap(
+                        segments: outlineSegments,
+                        carPoints: rx.carPoints,
+                        playerIndex: rx.playerCarIndex
+                    )
+                }
             }
         }
     }
@@ -445,7 +454,7 @@ struct HeaderView: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                if UIImage(named: "AppLogo") != nil { Image("AppLogo").resizable().scaledToFit().frame(height: 24) }
+                AppLogoView().frame(height: 24)
                 Text(title)
                     .font(.custom("Inter", size: 22).weight(.semibold))
                     .foregroundColor(.textPrimary)
@@ -478,10 +487,7 @@ struct GaugeBar: View {
     let gradient: LinearGradient
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(label)
-                .font(.secondaryEmphasised)
-                .foregroundColor(.textSecondary)
+        VStack(alignment: .leading, spacing: 4) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color.white.opacity(0.04))
@@ -497,6 +503,10 @@ struct GaugeBar: View {
                 }
             }
             .frame(height: 20)
+            Text(label)
+                .font(.gaugeLabel)
+                .foregroundColor(.gaugeLabel)
+                .kerning(1.08)
         }
     }
 }
@@ -513,6 +523,44 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
         .frame(minWidth: 400, minHeight: 300)
+    }
+}
+
+// MARK: - App Logo provider
+
+struct AppLogoView: View {
+    var body: some View {
+        if let ui = AppLogoProvider.loadLogoImage() {
+            Image(uiImage: ui)
+                .resizable()
+                .scaledToFit()
+        }
+    }
+}
+
+enum AppLogoProvider {
+    static func loadLogoImage() -> UIImage? {
+        // 1) Prefer an asset named "AppLogo"
+        if let fromAssets = UIImage(named: "AppLogo") { return fromAssets }
+        // 2) Try common filenames in bundle subdirectory "assets" (project has PNGs there)
+        let candidates = [
+            "logo", "Logo", "app_logo",
+            "Icon-Light-1024x1024", "Icon-Dark-1024x1024", "Icon-Tinted-1024x1024"
+        ]
+        for name in candidates {
+            if let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "assets"),
+               let data = try? Data(contentsOf: url),
+               let img = UIImage(data: data) {
+                return img
+            }
+        }
+        // 3) Fallback to any PNG named "splash" in assets
+        if let url = Bundle.main.url(forResource: "splash", withExtension: "png", subdirectory: "assets"),
+           let data = try? Data(contentsOf: url),
+           let img = UIImage(data: data) {
+            return img
+        }
+        return nil
     }
 }
 

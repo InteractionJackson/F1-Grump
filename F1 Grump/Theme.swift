@@ -44,6 +44,7 @@ extension Color {
     // App background gradient (Dashboard): linear-gradient(114.2deg, #31233B 0.9%, #130D16 100%)
     static let appBGStart        = Color.p3(0.192, 0.137, 0.231) // #31233B
     static let appBGEnd          = Color.p3(0.074, 0.051, 0.086) // #130D16
+    static let gaugeLabel        = Color.white.opacity(0.5)
 }
 
 // MARK: - Typography tokens (Figma)
@@ -56,6 +57,7 @@ extension Font {
     static let body18             = Font.custom("Inter", size: 18)
     static let captionEmphasised  = Font.custom("Inter", size: 10).weight(.semibold)
     static let secondary12        = Font.custom("Inter", size: 12)
+    static let gaugeLabel         = Font.custom("Inter", size: 12).weight(.bold)
 }
 
 // A clean tile modifier that matches your CSS-like spec
