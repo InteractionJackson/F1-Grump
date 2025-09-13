@@ -39,6 +39,23 @@ extension Color {
     static let headerBorder      = Color.p3(0, 0, 0, 0.35)
     static let headerIcon        = Color.white
     static let headerButtonBorder = Color.p3(0.325, 0.239, 0.401) // #533D66
+    static let buttonBGDefault   = Color.white.opacity(0.12)       // fallback until exact Figma hex is provided
+
+    // App background gradient (Dashboard): linear-gradient(114.2deg, #31233B 0.9%, #130D16 100%)
+    static let appBGStart        = Color.p3(0.192, 0.137, 0.231) // #31233B
+    static let appBGEnd          = Color.p3(0.074, 0.051, 0.086) // #130D16
+}
+
+// MARK: - Typography tokens (Figma)
+extension Font {
+    static let headerEmphasised   = Font.custom("Inter", size: 12).weight(.semibold)
+    static let buttonContent      = Font.custom("Inter", size: 12).weight(.semibold)
+    static let titleEmphasised    = Font.custom("Inter", size: 56).weight(.bold)
+    static let secondaryEmphasised = Font.custom("Inter", size: 12).weight(.semibold)
+    static let caption            = Font.custom("Inter", size: 10)
+    static let body18             = Font.custom("Inter", size: 18)
+    static let captionEmphasised  = Font.custom("Inter", size: 10).weight(.semibold)
+    static let secondary12        = Font.custom("Inter", size: 12)
 }
 
 // A clean tile modifier that matches your CSS-like spec

@@ -10,7 +10,7 @@ struct Card<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.custom("Inter", size: 18).weight(.semibold))
+                .font(.secondaryEmphasised)
                 .foregroundColor(.textPrimary)
             content()
                 .foregroundColor(.textPrimary)
@@ -70,7 +70,6 @@ struct ContentView: View {
             .padding(.horizontal, 24)
             .padding(.top, 12)
             .padding(.bottom, 12)
-            .background(Color.headerBG)
             .overlay(Rectangle().frame(height: 1).foregroundColor(.headerBorder), alignment: .bottom)
 
             GeometryReader { geo in
@@ -87,7 +86,13 @@ struct ContentView: View {
                 .padding(24)
             }
         }
-        .background(Color.headerBG.ignoresSafeArea())
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [.appBGStart, .appBGEnd]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ).ignoresSafeArea()
+        )
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
@@ -222,7 +227,7 @@ struct LapSplitsView: View {
                 Text("Last: ").foregroundColor(.textSecondary)
                 Text(fmtLap(rx.lastLapMS)).monospacedDigit()
                 Spacer()
-                Text("Lap \(rx.lapNumber)")
+                Text("Lap \(rx.lapNumber)").foregroundColor(.textSecondary)
             }
             HStack(spacing: 10) {
                 let current = rx.sectorMS
@@ -331,21 +336,21 @@ struct SpeedRpmTile: View {
             HStack(alignment: .firstTextBaseline, spacing: 24) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(Int(rx.speedKmh))")
-                        .font(.custom("Inter", size: 56).weight(.bold))
+                        .font(.titleEmphasised)
                         .monospacedDigit()
-                    Text("km/h").opacity(0.8)
+                    Text("km/h").foregroundColor(.textSecondary)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gearText)
-                        .font(.custom("Inter", size: 56).weight(.bold))
-                    Text("Gear").opacity(0.8)
+                        .font(.titleEmphasised)
+                    Text("Gear").foregroundColor(.textSecondary)
                 }
                 Spacer()
                 Text("DRS")
-                    .font(.caption.weight(.semibold))
+                    .font(.buttonContent)
                     .foregroundColor(rx.drsOpen ? .drsOpenText : .textPrimary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(rx.drsOpen ? Color.drsOpenBG : Color.white.opacity(0.12), in: Capsule())
+                    .background((rx.drsOpen ? Color.drsOpenBG : Color.buttonBGDefault), in: Capsule())
                     .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 1))
             }
             VStack(alignment: .leading, spacing: 6) {
