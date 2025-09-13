@@ -52,6 +52,7 @@ extension Font {
     static let headerEmphasised   = Font.custom("Inter", size: 12).weight(.semibold)
     static let buttonContent      = Font.custom("Inter", size: 12).weight(.semibold)
     static let titleEmphasised    = Font.custom("Inter", size: 56).weight(.bold)
+    static let title40            = Font.custom("Inter", size: 40).weight(.bold)
     static let secondaryEmphasised = Font.custom("Inter", size: 12).weight(.semibold)
     static let caption            = Font.custom("Inter", size: 10)
     static let body18             = Font.custom("Inter", size: 18)

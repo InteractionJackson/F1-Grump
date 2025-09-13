@@ -325,22 +325,22 @@ private struct CurrentLapBox: View {
     let c2: Color
     let c3: Color
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
                 HStack {
                     Spacer()
                     Text(fmtLap(timeMS))
-                        .font(.titleEmphasised)
+                        .font(.title40)
                         .monospacedDigit()
                         .foregroundColor(.textPrimary)
                     Spacer()
                 }
-                .padding(.vertical, 4)
-                .padding(.horizontal, 12)
+                .padding(.vertical, 8)   // green 32px total target with outer spacing
+                .padding(.horizontal, 16)
             }
-            .frame(height: 88)
+            .frame(height: 64)   // green spec ~32px above + 8px + 32px below combined, adjust height
 
             HStack(spacing: 16) {
                 SectorBox(titleBelow: "SECTOR 1", timeMS: s1, color: c1)
@@ -350,6 +350,8 @@ private struct CurrentLapBox: View {
                 SectorBox(titleBelow: "SECTOR 3", timeMS: s3, color: c3)
                     .frame(maxWidth: .infinity)
             }
+            .padding(.top, 32)
+            .padding(.bottom, 16)
         }
     }
 }
@@ -390,7 +392,7 @@ private struct SectorBox: View {
                     .monospacedDigit()
                     .foregroundColor(color)
             }
-            .frame(height: 56)
+            .frame(height: 40)
             Text(titleBelow)
                 .font(.gaugeLabel)
                 .foregroundColor(.gaugeLabel)
