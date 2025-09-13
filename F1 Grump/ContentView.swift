@@ -99,9 +99,10 @@ struct ContentView: View {
         .onAppear {
             rx.start()
             if outlineSegments.isEmpty {
-                let name = allTracks.first ?? ""
-                selectedTrack = name
-                outlineSegments = loadGeoJSONOutline(named: name)
+                // Empty-state: default to Silverstone if telemetry hasn’t set a track
+                let fallback = allTracks.contains("gb-1948") ? "gb-1948" : (allTracks.first ?? "")
+                selectedTrack = fallback
+                outlineSegments = loadGeoJSONOutline(named: fallback)
             }
             #if DEBUG
             if designPreview {
