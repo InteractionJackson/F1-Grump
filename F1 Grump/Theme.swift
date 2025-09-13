@@ -14,8 +14,9 @@ extension Color {
     }
     static let appGradientTop    = Color.p3(0.639, 0.475, 0.886) // #A379E2
     static let appGradientBottom = Color.p3(0.490, 0.255, 0.839) // #7D41D6
-    static let tileBG            = Color.p3(0, 0, 0, 0.21)
-    static let tileBorder        = Color.p3(0, 0, 0, 0.47)
+    // Card style per spec: bg: rgba(255,255,255,0.03), border: rgba(255,255,255,0.08)
+    static let tileBG            = Color.p3(1, 1, 1, 0.03)
+    static let tileBorder        = Color.p3(1, 1, 1, 0.08)
 
     // Dashboard (dark) tokens
     static let textPrimary       = Color.white
@@ -45,20 +46,23 @@ extension Color {
     static let appBGStart        = Color.p3(0.192, 0.137, 0.231) // #31233B
     static let appBGEnd          = Color.p3(0.074, 0.051, 0.086) // #130D16
     static let gaugeLabel        = Color.white.opacity(0.5)
+    static let labelEmphasised   = Color.white.opacity(0.5)
 }
 
 // MARK: - Typography tokens (Figma)
 extension Font {
     static let headerEmphasised   = Font.custom("Inter", size: 12).weight(.semibold)
     static let buttonContent      = Font.custom("Inter", size: 12).weight(.semibold)
-    static let titleEmphasised    = Font.custom("Inter", size: 56).weight(.bold)
+    // Title emphasised: Inter-Bold 32pt (single-line; center/alignment is applied per-usage)
+    static let titleEmphasised    = Font.custom("Inter", size: 32).weight(.bold)
     static let title40            = Font.custom("Inter", size: 40).weight(.bold)
     static let secondaryEmphasised = Font.custom("Inter", size: 12).weight(.semibold)
     static let caption            = Font.custom("Inter", size: 10)
     static let body18             = Font.custom("Inter", size: 18)
     static let captionEmphasised  = Font.custom("Inter", size: 10).weight(.semibold)
     static let secondary12        = Font.custom("Inter", size: 12)
-    static let gaugeLabel         = Font.custom("Inter", size: 12).weight(.bold)
+    // Label emphasised: Inter-SemiBold 10pt
+    static let gaugeLabel         = Font.custom("Inter", size: 10).weight(.semibold)
 }
 
 // A clean tile modifier that matches your CSS-like spec
@@ -68,12 +72,14 @@ struct TileModifier: ViewModifier {
         content
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
-            .background(Color.tileBG)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.tileBG)
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(Color.tileBorder, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

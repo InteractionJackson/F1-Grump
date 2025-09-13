@@ -307,8 +307,8 @@ private struct BoxedTime: View {
             .frame(height: 88)
             Text(titleBelow)
                 .font(.gaugeLabel)
-                .foregroundColor(.gaugeLabel)
-                .kerning(1.08)
+                .foregroundColor(.labelEmphasised)
+                .kerning(0.9)
         }
     }
 }
@@ -330,7 +330,7 @@ private struct CurrentLapBox: View {
                 HStack {
                     Spacer()
                     Text(fmtLap(timeMS))
-                        .font(.title40)
+                        .font(.titleEmphasised)
                         .monospacedDigit()
                         .foregroundColor(.textPrimary)
                     Spacer()
@@ -365,8 +365,8 @@ private struct SmallBoxedTime: View {
             .frame(height: 48)
             Text(titleBelow)
                 .font(.gaugeLabel)
-                .foregroundColor(.gaugeLabel)
-                .kerning(1.08)
+                .foregroundColor(.labelEmphasised)
+                .kerning(0.9)
         }
     }
 }
@@ -637,8 +637,8 @@ struct GaugeBar: View {
             .frame(height: 20)
             Text(label)
                 .font(.gaugeLabel)
-                .foregroundColor(.gaugeLabel)
-                .kerning(1.08)
+                .foregroundColor(.labelEmphasised)
+                .kerning(0.9)
         }
     }
 }
@@ -666,9 +666,6 @@ struct AppLogoView: View {
             Image(uiImage: ui)
                 .resizable()
                 .scaledToFit()
-        } else if AppLogoProvider.hasSVG() {
-            SimpleSVGView(filename: "AppLogo")
-                .foregroundColor(.headerIcon)
         }
     }
 }
@@ -677,6 +674,11 @@ enum AppLogoProvider {
     static func loadLogoImage() -> UIImage? {
         // 1) Prefer an asset named "AppLogo"
         if let fromAssets = UIImage(named: "AppLogo") { return fromAssets }
+        // 1b) Prefer bundled PNG named AppLogo (in assets/ or root)
+        if let url = Bundle.main.url(forResource: "AppLogo", withExtension: "png", subdirectory: "assets")
+              ?? Bundle.main.url(forResource: "AppLogo", withExtension: "png") {
+            if let data = try? Data(contentsOf: url), let img = UIImage(data: data) { return img }
+        }
         // 2) Try common filenames in bundle subdirectory "assets" (project has PNGs there)
         let candidates = [
             "logo", "Logo", "app_logo",
@@ -698,36 +700,8 @@ enum AppLogoProvider {
         return nil
     }
 
-    static func hasSVG() -> Bool {
-        let url = Bundle.main.url(forResource: "AppLogo", withExtension: "svg", subdirectory: "assets")
-              ?? Bundle.main.url(forResource: "AppLogo", withExtension: "svg")
-        return (url != nil)
-    }
+    static func hasSVG() -> Bool { false }
 }
 
-// Minimal SVG renderer for the header logo
-import PocketSVG
-import UIKit
-struct SimpleSVGView: UIViewRepresentable {
-    let filename: String
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView()
-        v.isOpaque = false
-        let base = CALayer()
-        v.layer.addSublayer(base)
-        if let url = Bundle.main.url(forResource: filename, withExtension: "svg", subdirectory: "assets")
-              ?? Bundle.main.url(forResource: filename, withExtension: "svg") {
-            let paths = SVGBezierPath.pathsFromSVG(at: url)
-            for p in paths {
-                let l = CAShapeLayer()
-                l.path = p.cgPath
-                l.fillColor = UIColor.white.cgColor
-                l.strokeColor = UIColor.clear.cgColor
-                base.addSublayer(l)
-            }
-        }
-        return v
-    }
-    func updateUIView(_ uiView: UIView, context: Context) { }
-}
+// SVG fallback removed; using PNG or asset image instead
 
