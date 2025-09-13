@@ -354,13 +354,14 @@ struct SpeedRpmTile: View {
                         RoundedRectangle(cornerRadius: 10)
                             .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
                         Text(gearText)
-                            .font(.titleEmphasised)
+                            .font(.body18)
                             .foregroundColor(.textPrimary)
+                            .frame(maxWidth: .infinity)
                     }
                     .frame(height: 48)
 
                     Text("DRS")
-                        .font(.buttonContent)
+                        .font(.body18)
                         .foregroundColor(rx.drsOpen ? .drsOpenText : .textPrimary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
@@ -376,22 +377,21 @@ struct SpeedRpmTile: View {
                      gradient: LinearGradient(colors: [Color.cyan, Color.green, Color.red], startPoint: .leading, endPoint: .trailing))
             .padding(.top, 24)
 
-            // Bottom row: RPM (left), ERS and Fuel (right)
-            HStack(spacing: 16) {
-                GaugeBar(label: "RPM",
-                         value: min(max(rx.rpm / rpmRedline, 0), 1),
-                         gradient: LinearGradient(colors: [Color.red, Color.yellow], startPoint: .leading, endPoint: .trailing))
-                    .layoutPriority(1)
+            // RPM full-width row
+            GaugeBar(label: "RPM",
+                     value: min(max(rx.rpm / rpmRedline, 0), 1),
+                     gradient: LinearGradient(colors: [Color.red, Color.yellow], startPoint: .leading, endPoint: .trailing))
 
-                VStack(spacing: 16) {
-                    GaugeBar(label: "ERS",
-                             value: min(max(rx.ersPercent, 0), 1),
-                             gradient: LinearGradient(colors: [Color.red, Color.yellow], startPoint: .leading, endPoint: .trailing))
-                    GaugeBar(label: "FUEL",
-                             value: min(max(rx.fuelPercent, 0), 1),
-                             gradient: LinearGradient(colors: [Color.red, Color.green], startPoint: .leading, endPoint: .trailing))
-                }
-                .frame(width: 320)
+            // ERS and Fuel 50/50 row
+            HStack(spacing: 16) {
+                GaugeBar(label: "ERS",
+                         value: min(max(rx.ersPercent, 0), 1),
+                         gradient: LinearGradient(colors: [Color.yellow], startPoint: .leading, endPoint: .trailing))
+                    .frame(maxWidth: .infinity)
+                GaugeBar(label: "FUEL",
+                         value: min(max(rx.fuelPercent, 0), 1),
+                         gradient: LinearGradient(colors: [Color.green], startPoint: .leading, endPoint: .trailing))
+                    .frame(maxWidth: .infinity)
             }
         }
         .foregroundColor(.white)
