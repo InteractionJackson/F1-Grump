@@ -96,11 +96,23 @@ struct ContentView: View {
                 rx.bestSectorMS        = [33000, 65000, 47000]
                 rx.lastSectorMS        = [32000, 64000, 48000] // S1 fastest (purple), S2 PB (green), S3 over (gold)
             }
+            print("DESIGN_PREVIEW=", designPreview)
             #endif
         }
         .onDisappear {
             rx.stop()
         }
+        #if DEBUG
+        .overlay(alignment: .top) {
+            if designPreview {
+                Text("Design Preview ON")
+                    .font(.caption.weight(.semibold))
+                    .padding(6)
+                    .background(Color.red.opacity(0.8), in: Capsule())
+                    .padding(.top, 8)
+            }
+        }
+        #endif
     }
 
     // MARK: Left column
