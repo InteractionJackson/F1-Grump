@@ -332,51 +332,62 @@ struct SpeedRpmTile: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 24) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(Int(rx.speedKmh))")
-                        .font(.titleEmphasised)
-                        .monospacedDigit()
-                    Text("km/h").foregroundColor(.textSecondary)
+        VStack(alignment: .leading, spacing: 16) {
+            // Top row: Speed box, Gear box, DRS toggle
+            HStack(alignment: .center, spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                    HStack {
+                        Text("\(Int(rx.speedKmh))")
+                            .font(.titleEmphasised)
+                            .monospacedDigit()
+                            .foregroundColor(.textPrimary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(gearText)
-                        .font(.titleEmphasised)
-                    Text("Gear").foregroundColor(.textSecondary)
+                .frame(height: 96)
+
+                VStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                        Text(gearText)
+                            .font(.titleEmphasised)
+                            .foregroundColor(.textPrimary)
+                    }
+                    .frame(height: 48)
+
+                    Text("DRS")
+                        .font(.buttonContent)
+                        .foregroundColor(rx.drsOpen ? .drsOpenText : .textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background((rx.drsOpen ? Color.drsOpenBG : Color.buttonBGDefault), in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1))
                 }
-                Spacer()
-                Text("DRS")
-                    .font(.buttonContent)
-                    .foregroundColor(rx.drsOpen ? .drsOpenText : .textPrimary)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background((rx.drsOpen ? Color.drsOpenBG : Color.buttonBGDefault), in: Capsule())
-                    .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 1))
+                .frame(width: 220)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("RPM").opacity(0.8)
-                ProgressView(value: min(max(rx.rpm / rpmRedline, 0), 1))
-                    .tint(.accentRPM)
-                    .background(Color.progressTrack, in: Capsule())
-            }
+
+            // MPH full-width gradient gauge
+            GaugeBar(label: "MPH",
+                     value: min(max(rx.speedKmh * 0.621371 / 240.0, 0), 1),
+                     gradient: LinearGradient(colors: [Color.cyan, Color.green, Color.red], startPoint: .leading, endPoint: .trailing))
+
+            // Bottom row: RPM (left), ERS and Fuel (right)
             HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Throttle").opacity(0.8)
-                    ProgressView(value: min(max(rx.throttle, 0), 1))
-                        .tint(.accentRPM)
-                        .background(Color.progressTrack, in: Capsule())
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Brake").opacity(0.8)
-                    ProgressView(value: min(max(rx.brake, 0), 1))
-                        .tint(.accentBrake)
-                        .background(Color.progressTrack, in: Capsule())
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("ERS").opacity(0.8)
-                    ProgressView(value: min(max(rx.ersPercent, 0), 1))
-                        .tint(.accentERS)
-                        .background(Color.progressTrack, in: Capsule())
+                GaugeBar(label: "RPM",
+                         value: min(max(rx.rpm / rpmRedline, 0), 1),
+                         gradient: LinearGradient(colors: [Color.red, Color.yellow], startPoint: .leading, endPoint: .trailing))
+
+                VStack(spacing: 16) {
+                    GaugeBar(label: "ERS",
+                             value: min(max(rx.ersPercent, 0), 1),
+                             gradient: LinearGradient(colors: [Color.green], startPoint: .leading, endPoint: .trailing))
+                    GaugeBar(label: "FUEL",
+                             value: min(max(rx.fuelPercent, 0), 1),
+                             gradient: LinearGradient(colors: [Color.green], startPoint: .leading, endPoint: .trailing))
                 }
             }
         }
@@ -452,6 +463,36 @@ struct HeaderView: View {
                 .cornerRadius(8)
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Gauge bar
+
+struct GaugeBar: View {
+    let label: String
+    let value: Double   // 0..1
+    let gradient: LinearGradient
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.secondaryEmphasised)
+                .foregroundColor(.textSecondary)
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                GeometryReader { geo in
+                    let w = max(0, min(1, value)) * geo.size.width
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(gradient)
+                        .frame(width: w)
+                        .animation(.easeInOut(duration: 0.2), value: value)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 4)
+                }
+            }
+            .frame(height: 20)
         }
     }
 }

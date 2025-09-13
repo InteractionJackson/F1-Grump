@@ -29,6 +29,7 @@ final class TelemetryReceiver: ObservableObject {
     @Published var ersPercent: Double = 0   // 0…1 of ERS store
     @Published var bestSectorMS: [Int] = [0, 0, 0]
     @Published var overallBestSectorMS: [Int] = [0, 0, 0]   // across all cars
+    @Published var fuelPercent: Double = 1.0                 // 0…1 fuel remaining (placeholder until parsed)
 
     // Tyres & laps
     @Published var tyreInnerTemps: [Int] = [0,0,0,0]   // FL, FR, RL, RR
