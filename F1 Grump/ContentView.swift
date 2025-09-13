@@ -52,6 +52,7 @@ struct ContentView: View {
     @State private var selectedTrack: String = ""
     @State private var outlineSegments: [[CGPoint]] = []
     @StateObject private var circuitFetcher = CircuitImageFetcher()
+    @State private var speedTileHeight: CGFloat = 0
 
     @State private var demoDamage: [String: CGFloat] = [
         "front_wing_left": 0.2,
@@ -141,21 +142,24 @@ struct ContentView: View {
         GeometryReader { colGeo in
             let spacing: CGFloat = 16
             let hAvailable = colGeo.size.height - spacing
-            let hTop = hAvailable * 0.60
-            let hBottom = hAvailable * 0.40
+            let speedH = max(0, speedTileHeight)
+            let condH = max(0, hAvailable - speedH)
             VStack(alignment: .leading, spacing: spacing) {
-                Card(title: "Car condition & damage", height: hTop) {
-                    CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear)
+                Card(title: "Car condition & damage", height: condH) {
+                    CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
                 }
 
-                Card(title: "Speed, RPM, DRS & Gear", height: hBottom) {
-                    GeometryReader { inner in
-                        ScrollView(.vertical, showsIndicators: false) {
-                            SpeedRpmTile(rx: rx, rpmRedline: 12000)
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
-                                .padding(.bottom, 1) // avoid cut-off shadows
-                        }
-                        .frame(width: inner.size.width, height: inner.size.height)
+                Card(title: "Speed, RPM, DRS & Gear", height: speedH) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        SpeedRpmTile(rx: rx, rpmRedline: 12000)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear
+                                        .onAppear { speedTileHeight = proxy.size.height }
+                                        .onChange(of: proxy.size.height) { _, new in speedTileHeight = new }
+                                }
+                            )
                     }
                 }
             }
@@ -168,8 +172,8 @@ struct ContentView: View {
         GeometryReader { colGeo in
             let spacing: CGFloat = 16
             let hAvailable = colGeo.size.height - spacing
-            let hTop = hAvailable * 0.30
-            let hBottom = hAvailable * 0.70
+            let hTop = hAvailable * 0.40
+            let hBottom = hAvailable * 0.60
             VStack(alignment: .leading, spacing: spacing) {
                 Card(title: "Splits", height: hTop) {
                     LapSplitsView(rx: rx)
@@ -332,12 +336,12 @@ private struct CurrentLapBox: View {
                         .foregroundColor(.textPrimary)
                     Spacer()
                 }
-                HStack(spacing: 16) {                     // 16px between sector boxes
-                    SectorBox(titleBelow: "SECTOR 1", timeMS: s1, color: c1)
+                HStack(spacing: 8) {                      // 8px between sector boxes
+                    SectorBox(titleBelow: "S1", timeMS: s1, color: c1)
                         .frame(maxWidth: .infinity)
-                    SectorBox(titleBelow: "SECTOR 2", timeMS: s2, color: c2)
+                    SectorBox(titleBelow: "S2", timeMS: s2, color: c2)
                         .frame(maxWidth: .infinity)
-                    SectorBox(titleBelow: "SECTOR 3", timeMS: s3, color: c3)
+                    SectorBox(titleBelow: "S3", timeMS: s3, color: c3)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -507,7 +511,7 @@ struct SpeedRpmTile: View {
                 }
                 .frame(height: 68)
 
-                VStack(spacing: 8) {
+                VStack(spacing: 16) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color.tileBG)
@@ -555,7 +559,7 @@ struct SpeedRpmTile: View {
             GaugeBar(label: "RPM",
                      value: min(max(rx.rpm / rpmRedline, 0), 1),
                      gradient: LinearGradient(colors: [Color.red, Color.yellow], startPoint: .leading, endPoint: .trailing))
-            .padding(.top, 24)
+            .padding(.top, 16)
 
             // ERS and Fuel 50/50 row
             HStack(spacing: 16) {
@@ -617,25 +621,32 @@ struct CarConditionGrid: View {
     // Temps in °C, wear in % (0-100) per FL, FR, RL, RR
     let temps: [Int]
     let wear: [Int]
+    let brakes: [Int]
 
     var body: some View {
         GeometryReader { geo in
             let colSpacing: CGFloat = 24
             HStack(alignment: .center, spacing: colSpacing) {
                 VStack(spacing: 16) {
-                    TyreTile(label: "FRONT LEFT", wear: wear[safe:0] ?? 0, temp: temps[safe:0] ?? 0)
-                    TyreTile(label: "REAR LEFT", wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0)
+                    TyreStack(label: "FRONT LEFT", wear: wear[safe:0] ?? 0, temp: temps[safe:0] ?? 0, brake: brakes[safe:0] ?? 0)
+                    TyreStack(label: "REAR LEFT", wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0, brake: brakes[safe:2] ?? 0)
                 }
                 .frame(maxWidth: .infinity)
 
-                DamageSVGView(filename: "car_overlay", damage: [:])
-                    .padding(12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .aspectRatio(contentMode: .fit)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.p3(0.188, 0.857, 0.277, 0.14))
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.p3(0.188, 0.857, 0.277), lineWidth: 0.83)
+                    DamageSVGView(filename: "car_overlay", damage: [:])
+                        .padding(12)
+                        .aspectRatio(contentMode: .fit)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 VStack(spacing: 16) {
-                    TyreTile(label: "FRONT RIGHT", wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0)
-                    TyreTile(label: "REAR RIGHT", wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0)
+                    TyreStack(label: "FRONT RIGHT", wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0)
+                    TyreStack(label: "REAR RIGHT", wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0, brake: brakes[safe:3] ?? 0)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -643,10 +654,24 @@ struct CarConditionGrid: View {
     }
 }
 
-private struct TyreTile: View {
+private struct TyreStack: View {
     let label: String
     let wear: Int
     let temp: Int
+    let brake: Int
+    var body: some View {
+        VStack(spacing: 8) {
+            TyreRow(label: label, value: nil)
+            TyreRow(label: "CONDITION", value: "\(wear)%")
+            TyreRow(label: "TEMP", value: "\(temp)°")
+            TyreRow(label: "BRAKES", value: "\(brake)°")
+        }
+    }
+}
+
+private struct TyreRow: View {
+    let label: String
+    let value: String?
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8)
@@ -659,27 +684,11 @@ private struct TyreTile: View {
                     .foregroundColor(.labelEmphasised)
                     .kerning(0.9)
                 Spacer()
-                HStack(spacing: 24) {
-                    HStack(spacing: 6) {
-                        Text("CONDITION")
-                            .font(.gaugeLabel)
-                            .foregroundColor(.labelEmphasised)
-                            .kerning(0.9)
-                        Text("\(wear)%")
-                            .font(.body18)
-                            .kerning(1.62)
-                            .foregroundColor(.textPrimary)
-                    }
-                    HStack(spacing: 6) {
-                        Text("TEMP")
-                            .font(.gaugeLabel)
-                            .foregroundColor(.labelEmphasised)
-                            .kerning(0.9)
-                        Text("\(temp)°")
-                            .font(.body18)
-                            .kerning(1.62)
-                            .foregroundColor(.textPrimary)
-                    }
+                if let v = value {
+                    Text(v)
+                        .font(.body18)
+                        .kerning(1.62)
+                        .foregroundColor(.textPrimary)
                 }
             }
             .padding(.horizontal, 12)
