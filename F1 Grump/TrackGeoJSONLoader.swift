@@ -104,7 +104,7 @@ struct TrackOutlineMap: View {
                     var path = Path()
                     path.move(to: scale(seg[0], size))
                     for p in seg.dropFirst() { path.addLine(to: scale(p, size)) }
-                    ctx.stroke(path, with: .color(.secondary.opacity(0.7)), lineWidth: 3)
+                    ctx.stroke(path, with: .color(.white), lineWidth: 16)
                 }
 
                 // 2) All car dots

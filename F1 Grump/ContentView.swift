@@ -175,11 +175,20 @@ struct ContentView: View {
                 }
 
                 Card(title: "Track position (overhead)", height: hBottom) {
-                    TrackOutlineMap(
-                        segments: outlineSegments,
-                        carPoints: rx.carPoints,
-                        playerIndex: rx.playerCarIndex
-                    )
+                    GeometryReader { g in
+                        let w = g.size.width * 0.80
+                        let x = (g.size.width - w) / 2
+                        // Height keeps the map square based on width, letting TrackOutlineMap scale
+                        VStack { Spacer(minLength: 0) }
+                            .frame(width: g.size.width, height: g.size.height, alignment: .top)
+                        TrackOutlineMap(
+                            segments: outlineSegments,
+                            carPoints: rx.carPoints,
+                            playerIndex: rx.playerCarIndex
+                        )
+                        .frame(width: w, height: w)
+                        .position(x: g.size.width / 2, y: g.size.height / 2)
+                    }
                 }
             }
         }
