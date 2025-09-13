@@ -65,7 +65,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HeaderView(title: "Dashboard") {
+            HeaderView(title: "") {
                 showSettings = true
             }
             .padding(.horizontal, 24)
@@ -546,9 +546,11 @@ struct HeaderView: View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
                 AppLogoView().frame(height: 24)
-                Text(title)
-                    .font(.custom("Inter", size: 22).weight(.semibold))
-                    .foregroundColor(.textPrimary)
+                if !title.isEmpty {
+                    Text(title)
+                        .font(.custom("Inter", size: 22).weight(.semibold))
+                        .foregroundColor(.textPrimary)
+                }
             }
             Spacer()
             Button(action: onSettings) {
@@ -625,6 +627,9 @@ struct AppLogoView: View {
             Image(uiImage: ui)
                 .resizable()
                 .scaledToFit()
+        } else if AppLogoProvider.hasSVG() {
+            SimpleSVGView(filename: "AppLogo")
+                .foregroundColor(.headerIcon)
         }
     }
 }
@@ -653,5 +658,37 @@ enum AppLogoProvider {
         }
         return nil
     }
+
+    static func hasSVG() -> Bool {
+        let url = Bundle.main.url(forResource: "AppLogo", withExtension: "svg", subdirectory: "assets")
+              ?? Bundle.main.url(forResource: "AppLogo", withExtension: "svg")
+        return (url != nil)
+    }
+}
+
+// Minimal SVG renderer for the header logo
+import PocketSVG
+import UIKit
+struct SimpleSVGView: UIViewRepresentable {
+    let filename: String
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.isOpaque = false
+        let base = CALayer()
+        v.layer.addSublayer(base)
+        if let url = Bundle.main.url(forResource: filename, withExtension: "svg", subdirectory: "assets")
+              ?? Bundle.main.url(forResource: filename, withExtension: "svg") {
+            let paths = SVGBezierPath.pathsFromSVG(at: url)
+            for p in paths {
+                let l = CAShapeLayer()
+                l.path = p.cgPath
+                l.fillColor = UIColor.white.cgColor
+                l.strokeColor = UIColor.clear.cgColor
+                base.addSublayer(l)
+            }
+        }
+        return v
+    }
+    func updateUIView(_ uiView: UIView, context: Context) { }
 }
 
