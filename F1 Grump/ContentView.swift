@@ -250,38 +250,43 @@ struct LapSplitsView: View {
     @ObservedObject var rx: TelemetryReceiver
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Top row: current lap box on the left, last/best on the right
-            HStack(spacing: 16) {
-                BoxedTime(titleBelow: "CURRENT LAP", timeMS: rx.currentLapMS)
-                    .frame(maxWidth: .infinity)
+        GeometryReader { geo in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Top row: current lap box (70%) containing sector splits inside
+                    HStack(spacing: 16) {
+                        let current = rx.sectorMS
+                        let last    = rx.lastSectorMS
+                        let best    = rx.bestSectorMS
+                        let overall = rx.overallBestSectorMS
 
-                VStack(spacing: 16) {
-                    SmallBoxedTime(titleBelow: "LAST", timeMS: rx.lastLapMS)
-                    SmallBoxedTime(titleBelow: "BEST", timeMS: rx.bestLapMS)
+                        let s1Shown = last[0] > 0 ? last[0] : current[0]
+                        let s2Shown = last[1] > 0 ? last[1] : current[1]
+                        let s3Shown = last[2] > 0 ? last[2] : current[2]
+
+                        let s1Color: Color = (s1Shown > 0 && overall[0] > 0 && s1Shown <= overall[0]) ? .sectorFastest : ((best[0] > 0 && s1Shown <= best[0]) ? .sectorPersonal : (s1Shown > 0 ? .sectorOver : .textPrimary))
+                        let s2Color: Color = (s2Shown > 0 && overall[1] > 0 && s2Shown <= overall[1]) ? .sectorFastest : ((best[1] > 0 && s2Shown <= best[1]) ? .sectorPersonal : (s2Shown > 0 ? .sectorOver : .textPrimary))
+                        let s3Color: Color = (s3Shown > 0 && overall[2] > 0 && s3Shown <= overall[2]) ? .sectorFastest : ((best[2] > 0 && s3Shown <= best[2]) ? .sectorPersonal : (s3Shown > 0 ? .sectorOver : .textPrimary))
+
+                        CurrentLapBox(timeMS: rx.currentLapMS,
+                                      s1: s1Shown, s2: s2Shown, s3: s3Shown,
+                                      c1: s1Color, c2: s2Color, c3: s3Color)
+                            .frame(width: geo.size.width * 0.70)
+
+                        Spacer(minLength: 0)
+                    }
+
+                    // Bottom row: LAST and BEST side-by-side (50/50)
+                    HStack(spacing: 16) {
+                        SmallBoxedTime(titleBelow: "LAST", timeMS: rx.lastLapMS)
+                            .frame(maxWidth: .infinity)
+                        SmallBoxedTime(titleBelow: "BEST", timeMS: rx.bestLapMS)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
-                .frame(width: 320)
+                .padding(.vertical, 4)
             }
-
-            // Bottom row: three sector boxes
-            HStack(spacing: 16) {
-                let current = rx.sectorMS
-                let last    = rx.lastSectorMS
-                let best    = rx.bestSectorMS
-                let overall = rx.overallBestSectorMS
-
-                let s1Shown = last[0] > 0 ? last[0] : current[0]
-                let s2Shown = last[1] > 0 ? last[1] : current[1]
-                let s3Shown = last[2] > 0 ? last[2] : current[2]
-
-                let s1Color: Color = (s1Shown > 0 && overall[0] > 0 && s1Shown <= overall[0]) ? .sectorFastest : ((best[0] > 0 && s1Shown <= best[0]) ? .sectorPersonal : (s1Shown > 0 ? .sectorOver : .textPrimary))
-                let s2Color: Color = (s2Shown > 0 && overall[1] > 0 && s2Shown <= overall[1]) ? .sectorFastest : ((best[1] > 0 && s2Shown <= best[1]) ? .sectorPersonal : (s2Shown > 0 ? .sectorOver : .textPrimary))
-                let s3Color: Color = (s3Shown > 0 && overall[2] > 0 && s3Shown <= overall[2]) ? .sectorFastest : ((best[2] > 0 && s3Shown <= best[2]) ? .sectorPersonal : (s3Shown > 0 ? .sectorOver : .textPrimary))
-
-                SectorBox(titleBelow: "SECTOR 1", timeMS: s1Shown, color: s1Color)
-                SectorBox(titleBelow: "SECTOR 2", timeMS: s2Shown, color: s2Color)
-                SectorBox(titleBelow: "SECTOR 3", timeMS: s3Shown, color: s3Color)
-            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 }
@@ -301,11 +306,50 @@ private struct BoxedTime: View {
                     .monospacedDigit()
                     .foregroundColor(.textPrimary)
             }
-            .frame(height: 120)
+            .frame(height: 88)
             Text(titleBelow)
                 .font(.gaugeLabel)
                 .foregroundColor(.gaugeLabel)
                 .kerning(1.08)
+        }
+    }
+}
+
+// Current lap box including inner sector splits row
+private struct CurrentLapBox: View {
+    let timeMS: Int
+    let s1: Int
+    let s2: Int
+    let s3: Int
+    let c1: Color
+    let c2: Color
+    let c3: Color
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                HStack {
+                    Spacer()
+                    Text(fmtLap(timeMS))
+                        .font(.titleEmphasised)
+                        .monospacedDigit()
+                        .foregroundColor(.textPrimary)
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 12)
+            }
+            .frame(height: 88)
+
+            HStack(spacing: 16) {
+                SectorBox(titleBelow: "SECTOR 1", timeMS: s1, color: c1)
+                    .frame(maxWidth: .infinity)
+                SectorBox(titleBelow: "SECTOR 2", timeMS: s2, color: c2)
+                    .frame(maxWidth: .infinity)
+                SectorBox(titleBelow: "SECTOR 3", timeMS: s3, color: c3)
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 }
