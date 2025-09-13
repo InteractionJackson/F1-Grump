@@ -47,9 +47,11 @@ final class TrackSVGContainer: UIView {
         }
         guard let url else {
             #if DEBUG
-            print("⚠️ TrackSVGView: SVG not found for '", name, "' under assets/track outlines")
-            let files = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: "assets/track outlines")?.map { $0.lastPathComponent } ?? []
-            print("Available track SVGs:", files)
+            print("⚠️ TrackSVGView: SVG not found for '", name, "'")
+            let sub = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: "assets/track outlines")?.map { $0.lastPathComponent } ?? []
+            let root = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: nil)?.map { $0.lastPathComponent } ?? []
+            print("Available track SVGs (assets/track outlines):", sub)
+            print("Available SVGs (bundle root):", root)
             #endif
             return
         }
@@ -80,7 +82,10 @@ final class TrackSVGContainer: UIView {
 
     private func bestMatchURL(for hint: String) -> URL? {
         let normHint = normalize(hint)
-        let urls = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: "assets/track outlines") ?? []
+        var urls = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: "assets/track outlines") ?? []
+        if urls.isEmpty {
+            urls = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: nil) ?? []
+        }
         // Prefer names without the trailing " - White_*" part
         var best: (score: Int, url: URL)?
         for u in urls {
