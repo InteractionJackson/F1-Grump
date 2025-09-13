@@ -1,0 +1,15 @@
+{
+  "originHash" : "9c4d88d0575d3abeb9a64e765865c61ddc610b9167130c23a91c723df7174200",
+  "pins" : [
+    {
+      "identity" : "pocketsvg",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pocketsvg/PocketSVG",
+      "state" : {
+        "revision" : "890a94e60c59cdf055b4d549dd246f60c6b25b5e",
+        "version" : "2.8.0"
+      }
+    }
+  ],
+  "version" : 3
+}

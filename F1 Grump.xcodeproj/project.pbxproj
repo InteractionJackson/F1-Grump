@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		6E7134BA2E74128800B781B7 /* PocketSVG in Frameworks */ = {isa = PBXBuildFile; productRef = 6E7134B92E74128800B781B7 /* PocketSVG */; };
+		6E7134BB2E74128800B781B7 /* PocketSVG in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 6E7134B92E74128800B781B7 /* PocketSVG */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		6E7134362E730F2F00B781B7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -22,6 +27,20 @@
 			remoteInfo = "F1 Grump";
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		6E7134BC2E74128800B781B7 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				6E7134BB2E74128800B781B7 /* PocketSVG in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		6E7134252E730F2E00B781B7 /* F1 Grump.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "F1 Grump.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -52,6 +71,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6E7134BA2E74128800B781B7 /* PocketSVG in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +98,7 @@
 				6E7134272E730F2E00B781B7 /* F1 Grump */,
 				6E7134382E730F2F00B781B7 /* F1 GrumpTests */,
 				6E7134422E730F2F00B781B7 /* F1 GrumpUITests */,
+				6E7134B82E74128800B781B7 /* Frameworks */,
 				6E7134262E730F2E00B781B7 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -92,6 +113,13 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		6E7134B82E74128800B781B7 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -102,6 +130,7 @@
 				6E7134212E730F2E00B781B7 /* Sources */,
 				6E7134222E730F2E00B781B7 /* Frameworks */,
 				6E7134232E730F2E00B781B7 /* Resources */,
+				6E7134BC2E74128800B781B7 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -112,6 +141,7 @@
 			);
 			name = "F1 Grump";
 			packageProductDependencies = (
+				6E7134B92E74128800B781B7 /* PocketSVG */,
 			);
 			productName = "F1 Grump";
 			productReference = 6E7134252E730F2E00B781B7 /* F1 Grump.app */;
@@ -195,6 +225,9 @@
 			);
 			mainGroup = 6E71341C2E730F2E00B781B7;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6E71345C2E732F6600B781B7 /* XCRemoteSwiftPackageReference "PocketSVG" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6E7134262E730F2E00B781B7 /* Products */;
 			projectDirPath = "";
@@ -390,6 +423,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = "F1 Grump/F1_Grump.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -397,6 +431,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "F1-Grump-Info.plist";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -429,6 +464,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = "F1 Grump/F1_Grump.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -436,6 +472,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "F1-Grump-Info.plist";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -593,6 +630,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6E71345C2E732F6600B781B7 /* XCRemoteSwiftPackageReference "PocketSVG" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pocketsvg/PocketSVG";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6E7134B92E74128800B781B7 /* PocketSVG */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6E71345C2E732F6600B781B7 /* XCRemoteSwiftPackageReference "PocketSVG" */;
+			productName = PocketSVG;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6E71341D2E730F2E00B781B7 /* Project object */;
 }
