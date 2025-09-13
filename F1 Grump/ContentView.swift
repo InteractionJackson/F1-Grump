@@ -100,10 +100,8 @@ struct ContentView: View {
         .onAppear {
             rx.start()
             if outlineSegments.isEmpty {
-                // Empty-state: default to Silverstone if telemetry hasn’t set a track
-                let fallback = allTracks.contains("gb-1948") ? "gb-1948" : (allTracks.first ?? "")
-                selectedTrack = fallback
-                outlineSegments = loadGeoJSONOutline(named: fallback)
+                // Empty-state: prefer the SVG asset for Silverstone
+                selectedTrack = "Silverstone"
             }
             // Kick off fetching the F1.com circuit image for fallback display
             if let url = URL(string: "https://www.formula1.com/en/racing/2025/italy") {
@@ -184,7 +182,7 @@ struct ContentView: View {
                         let w = g.size.width * 0.80
                         ZStack {
                             // Prefer new SVG assets, fallback to geojson, then to fetched PNG
-                            TrackSVGView(filename: selectedTrack.isEmpty ? "gb-1948" : selectedTrack)
+                            TrackSVGView(filename: selectedTrack.isEmpty ? "Silverstone" : selectedTrack)
                                 .opacity(1)
                             if outlineSegments.isEmpty {
                                 EmptyView()
