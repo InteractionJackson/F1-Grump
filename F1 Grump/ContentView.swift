@@ -504,7 +504,7 @@ struct SpeedRpmTile: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 4)
                 }
-                .frame(height: 96)
+                .frame(height: 68)
 
                 VStack(spacing: 8) {
                     ZStack {
