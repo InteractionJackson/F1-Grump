@@ -76,8 +76,8 @@
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "DESIGN_PREVIEW = 1"
-            value = ""
+            key = "DESIGN_PREVIEW"
+            value = "1"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

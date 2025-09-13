@@ -33,6 +33,11 @@ extension Color {
     static let sectorFastest     = Color.p3(0.706, 0.478, 0.882) // #B47AE1
     static let sectorPersonal    = Color.p3(0.498, 0.882, 0.478) // #7FE17A
     static let sectorOver        = Color.p3(0.882, 0.780, 0.478) // #E1C77A
+
+    // Header / chrome
+    static let headerBG          = Color.p3(0.08, 0.06, 0.13, 0.85)
+    static let headerBorder      = Color.p3(0, 0, 0, 0.35)
+    static let headerIcon        = Color.white
 }
 
 // A clean tile modifier that matches your CSS-like spec

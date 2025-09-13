@@ -42,6 +42,7 @@ struct ContentView: View {
     #if DEBUG
     private let designPreview: Bool = ProcessInfo.processInfo.environment["DESIGN_PREVIEW"] == "1"
     #endif
+    @State private var showSettings = false
 
     // (kept for your reference)
     private let leftTopRatio: CGFloat = 0.70
@@ -62,24 +63,38 @@ struct ContentView: View {
     ]
 
     var body: some View {
-        GeometryReader { geo in
-            let spacing: CGFloat = 16
-            let colW = (geo.size.width - spacing - 48) / 2   // 48 = .padding(24) * 2
-
-            HStack(alignment: .top, spacing: spacing) {
-                leftColumn()            // no width parameter here
-                    .frame(width: colW, alignment: .topLeading)
-
-                rightColumn()
-                    .frame(width: colW, alignment: .topLeading)
+        VStack(spacing: 0) {
+            HeaderView(title: "Dashboard") {
+                showSettings = true
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
+            .background(Color.headerBG)
+            .overlay(Rectangle().frame(height: 1).foregroundColor(.headerBorder), alignment: .bottom)
+
+            GeometryReader { geo in
+                let spacing: CGFloat = 16
+                let colW = (geo.size.width - spacing - 48) / 2   // 48 = .padding(24) * 2
+
+                HStack(alignment: .top, spacing: spacing) {
+                    leftColumn()            // no width parameter here
+                        .frame(width: colW, alignment: .topLeading)
+
+                    rightColumn()
+                        .frame(width: colW, alignment: .topLeading)
+                }
+                .padding(24)
+            }
         }
         .background(
             LinearGradient(colors: [.appGradientTop, .appGradientBottom],
                            startPoint: .top, endPoint: .bottom)
             .ignoresSafeArea()
         )
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
         .onAppear {
             rx.start()
             if outlineSegments.isEmpty {
@@ -403,6 +418,45 @@ struct TyreHUD: View {
                 .opacity(0.85)
         }
         .foregroundColor(.white)
+    }
+}
+
+// MARK: - Header + Settings
+
+struct HeaderView: View {
+    let title: String
+    var onSettings: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.custom("Inter", size: 22).weight(.semibold))
+                .foregroundColor(.textPrimary)
+            Spacer()
+            Button(action: onSettings) {
+                Image(systemName: "gearshape")
+                    .imageScale(.large)
+                    .foregroundColor(.headerIcon)
+                    .padding(8)
+                    .background(Color.white.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+struct SettingsView: View {
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("General")) {
+                    Toggle("Design Preview", isOn: .constant(false))
+                    Text("Settings go here")
+                }
+            }
+            .navigationTitle("Settings")
+        }
+        .frame(minWidth: 400, minHeight: 300)
     }
 }
 
