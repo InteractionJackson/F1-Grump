@@ -182,21 +182,25 @@ struct ContentView: View {
                 Card(title: "Track position (overhead)", height: hBottom) {
                     GeometryReader { g in
                         let w = g.size.width * 0.80
-                        let x = (g.size.width - w) / 2
-                        // Height keeps the map square based on width, letting TrackOutlineMap scale
-                        VStack { Spacer(minLength: 0) }
-                            .frame(width: g.size.width, height: g.size.height, alignment: .top)
                         ZStack {
-                            TrackOutlineMap(
-                                segments: outlineSegments,
-                                carPoints: rx.carPoints,
-                                playerIndex: rx.playerCarIndex
-                            )
-                            if let ui = circuitFetcher.image {
+                            // Prefer new SVG assets, fallback to geojson, then to fetched PNG
+                            TrackSVGView(filename: selectedTrack.isEmpty ? "gb-1948" : selectedTrack)
+                                .opacity(1)
+                            if outlineSegments.isEmpty {
+                                EmptyView()
+                            } else {
+                                TrackOutlineMap(
+                                    segments: outlineSegments,
+                                    carPoints: rx.carPoints,
+                                    playerIndex: rx.playerCarIndex
+                                )
+                                .opacity(0) // hidden when using SVG assets
+                            }
+                            if let ui = circuitFetcher.image, outlineSegments.isEmpty {
                                 Image(uiImage: ui)
                                     .resizable()
                                     .scaledToFit()
-                                    .opacity(outlineSegments.isEmpty ? 1 : 0) // show as fallback only
+                                    .opacity(0.0) // keep as last resort (disabled for now)
                             }
                         }
                         .frame(width: w, height: w)
