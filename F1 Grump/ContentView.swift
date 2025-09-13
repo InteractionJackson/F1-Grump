@@ -325,10 +325,10 @@ private struct CurrentLapBox: View {
     let c2: Color
     let c3: Color
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+            VStack(alignment: .leading, spacing: 8) {   // 8px between rows
                 HStack {
                     Spacer()
                     Text(fmtLap(timeMS))
@@ -337,21 +337,16 @@ private struct CurrentLapBox: View {
                         .foregroundColor(.textPrimary)
                     Spacer()
                 }
-                .padding(.vertical, 8)   // green 32px total target with outer spacing
-                .padding(.horizontal, 16)
+                HStack(spacing: 16) {                     // 16px between sector boxes
+                    SectorBox(titleBelow: "SECTOR 1", timeMS: s1, color: c1)
+                        .frame(maxWidth: .infinity)
+                    SectorBox(titleBelow: "SECTOR 2", timeMS: s2, color: c2)
+                        .frame(maxWidth: .infinity)
+                    SectorBox(titleBelow: "SECTOR 3", timeMS: s3, color: c3)
+                        .frame(maxWidth: .infinity)
+                }
             }
-            .frame(height: 64)   // green spec ~32px above + 8px + 32px below combined, adjust height
-
-            HStack(spacing: 16) {
-                SectorBox(titleBelow: "SECTOR 1", timeMS: s1, color: c1)
-                    .frame(maxWidth: .infinity)
-                SectorBox(titleBelow: "SECTOR 2", timeMS: s2, color: c2)
-                    .frame(maxWidth: .infinity)
-                SectorBox(titleBelow: "SECTOR 3", timeMS: s3, color: c3)
-                    .frame(maxWidth: .infinity)
-            }
-            .padding(.top, 32)
-            .padding(.bottom, 16)
+            .padding(16)                                    // 16px inner border padding
         }
     }
 }
