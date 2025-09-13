@@ -150,7 +150,7 @@ struct ContentView: View {
                 }
             }
 
-            Card(title: "Speed, RPM, DRS & Gear", height: 180) {
+            Card(title: "Speed, RPM, DRS & Gear", height: 272) {
                 SpeedRpmTile(rx: rx, rpmRedline: 12000)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -481,12 +481,13 @@ struct GaugeBar: View {
                 .foregroundColor(.textSecondary)
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                    .fill(Color.white.opacity(0.04))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1))
                 GeometryReader { geo in
                     let w = max(0, min(1, value)) * geo.size.width
                     RoundedRectangle(cornerRadius: 12)
                         .fill(gradient)
-                        .frame(width: w)
+                        .frame(width: max(4, w))
                         .animation(.easeInOut(duration: 0.2), value: value)
                         .padding(.vertical, 4)
                         .padding(.horizontal, 4)
