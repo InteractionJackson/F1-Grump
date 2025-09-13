@@ -71,7 +71,6 @@ struct ContentView: View {
             .padding(.horizontal, 24)
             .padding(.top, 12)
             .padding(.bottom, 12)
-            .overlay(Rectangle().frame(height: 1).foregroundColor(.headerBorder), alignment: .bottom)
 
             GeometryReader { geo in
                 let spacing: CGFloat = 16
@@ -146,13 +145,7 @@ struct ContentView: View {
             let hBottom = hAvailable * 0.40
             VStack(alignment: .leading, spacing: spacing) {
                 Card(title: "Car condition & damage", height: hTop) {
-                    ZStack {
-                        DamageSVGView(filename: "car_overlay", damage: demoDamage)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .aspectRatio(contentMode: .fit)
-                        TyreHUD(temps: rx.tyreInnerTemps, condition: rx.tyreWear)
-                    }
+                    CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear)
                 }
 
                 Card(title: "Speed, RPM, DRS & Gear", height: hBottom) {
@@ -295,23 +288,25 @@ private struct BoxedTime: View {
     let titleBelow: String
     let timeMS: Int
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.tileBG)
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.tileBorder, lineWidth: 1)
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.tileBG)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.tileBorder, lineWidth: 1)
+            HStack(spacing: 8) {
+                Text(titleBelow)
+                    .font(.gaugeLabel)
+                    .foregroundColor(.labelEmphasised)
+                    .kerning(0.9)
+                Spacer()
                 Text(fmtLap(timeMS))
                     .font(.titleEmphasised)
                     .monospacedDigit()
                     .foregroundColor(.textPrimary)
             }
-            .frame(height: 88)
-            Text(titleBelow)
-                .font(.gaugeLabel)
-                .foregroundColor(.labelEmphasised)
-                .kerning(0.9)
+            .padding(.horizontal, 12)
         }
+        .frame(height: 88)
     }
 }
 
@@ -355,23 +350,26 @@ private struct SmallBoxedTime: View {
     let titleBelow: String
     let timeMS: Int
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.tileBG)
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.tileBorder, lineWidth: 1)
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.tileBG)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.tileBorder, lineWidth: 1)
+            HStack(spacing: 8) {
+                Text(titleBelow)
+                    .font(.gaugeLabel)
+                    .foregroundColor(.labelEmphasised)
+                    .kerning(0.9)
+                Spacer()
                 Text(fmtLap(timeMS))
                     .font(.body18)
+                    .kerning(1.62)
                     .monospacedDigit()
                     .foregroundColor(.textPrimary)
             }
-            .frame(height: 32)
-            Text(titleBelow)
-                .font(.gaugeLabel)
-                .foregroundColor(.labelEmphasised)
-                .kerning(0.9)
+            .padding(.horizontal, 12)
         }
+        .frame(height: 32)
     }
 }
 
@@ -380,23 +378,26 @@ private struct SectorBox: View {
     let timeMS: Int
     let color: Color
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.tileBG)
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.tileBorder, lineWidth: 1)
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.tileBG)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.tileBorder, lineWidth: 1)
+            HStack(spacing: 8) {
+                Text(titleBelow)
+                    .font(.gaugeLabel)
+                    .foregroundColor(.labelEmphasised)
+                    .kerning(0.9)
+                Spacer()
                 Text(timeMS > 0 ? fmtLap(timeMS) : "—:—.—")
                     .font(.body18)
+                    .kerning(1.62)
                     .monospacedDigit()
                     .foregroundColor(color)
             }
-            .frame(height: 32)
-            Text(titleBelow)
-                .font(.gaugeLabel)
-                .foregroundColor(.gaugeLabel)
-                .kerning(1.08)
+            .padding(.horizontal, 12)
         }
+        .frame(height: 32)
     }
 }
 
@@ -610,6 +611,83 @@ struct TyreHUD: View {
     }
 }
 
+// MARK: - Car condition grid
+
+struct CarConditionGrid: View {
+    // Temps in °C, wear in % (0-100) per FL, FR, RL, RR
+    let temps: [Int]
+    let wear: [Int]
+
+    var body: some View {
+        GeometryReader { geo in
+            let colSpacing: CGFloat = 24
+            HStack(alignment: .center, spacing: colSpacing) {
+                VStack(spacing: 16) {
+                    TyreTile(label: "FRONT LEFT", wear: wear[safe:0] ?? 0, temp: temps[safe:0] ?? 0)
+                    TyreTile(label: "REAR LEFT", wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0)
+                }
+                .frame(maxWidth: .infinity)
+
+                DamageSVGView(filename: "car_overlay", damage: [:])
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .aspectRatio(contentMode: .fit)
+
+                VStack(spacing: 16) {
+                    TyreTile(label: "FRONT RIGHT", wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0)
+                    TyreTile(label: "REAR RIGHT", wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+}
+
+private struct TyreTile: View {
+    let label: String
+    let wear: Int
+    let temp: Int
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.tileBG)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.tileBorder, lineWidth: 1)
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(.gaugeLabel)
+                    .foregroundColor(.labelEmphasised)
+                    .kerning(0.9)
+                Spacer()
+                HStack(spacing: 24) {
+                    HStack(spacing: 6) {
+                        Text("CONDITION")
+                            .font(.gaugeLabel)
+                            .foregroundColor(.labelEmphasised)
+                            .kerning(0.9)
+                        Text("\(wear)%")
+                            .font(.body18)
+                            .kerning(1.62)
+                            .foregroundColor(.textPrimary)
+                    }
+                    HStack(spacing: 6) {
+                        Text("TEMP")
+                            .font(.gaugeLabel)
+                            .foregroundColor(.labelEmphasised)
+                            .kerning(0.9)
+                        Text("\(temp)°")
+                            .font(.body18)
+                            .kerning(1.62)
+                            .foregroundColor(.textPrimary)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .frame(height: 32)
+    }
+}
+
 // MARK: - Header + Settings
 
 struct HeaderView: View {
@@ -619,7 +697,7 @@ struct HeaderView: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                AppLogoView().frame(height: 32)
+                AppLogoView().frame(height: 38.4)
                 if !title.isEmpty {
                     Text(title)
                         .font(.custom("Inter", size: 22).weight(.semibold))
