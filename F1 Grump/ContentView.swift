@@ -143,13 +143,8 @@ struct ContentView: View {
         GeometryReader { colGeo in
             let spacing: CGFloat = 16
             let hAvailable = colGeo.size.height - spacing
-            let groupSpacing: CGFloat = 24   // spacing between FL/RL and FR/RR groups
-            let tyreRowH: CGFloat = 32       // fixed height per TyreRow
-            let stackInnerSpacing: CGFloat = 8
-            let tyreStackH = tyreRowH * 3 + stackInnerSpacing * 2 // three rows + 2 inner spacings
-            let condContentH = max(200, tyreStackH * 2 + groupSpacing) // hug content (car vs two stacks)
-            let condH = min(condContentH, hAvailable) // don't exceed available
-            let speedH = max(0, hAvailable - condH)
+            let condH = hAvailable * 0.60
+            let speedH = hAvailable * 0.40
             VStack(alignment: .leading, spacing: spacing) {
                 Card(title: "Car condition & damage", height: condH) {
                     CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
