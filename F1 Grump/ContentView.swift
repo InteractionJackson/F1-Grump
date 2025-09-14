@@ -143,18 +143,11 @@ struct ContentView: View {
         GeometryReader { colGeo in
             let spacing: CGFloat = 16
             let hAvailable = colGeo.size.height - spacing
-            let condH = min(hAvailable, max(0, condTileHeight))
-            let speedH = max(0, hAvailable - condH)
+            let speedH = max(0, speedTileHeight)
+            let condH = max(0, hAvailable - speedH)
             VStack(alignment: .leading, spacing: spacing) {
                 Card(title: "Car condition & damage", height: condH) {
                     CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear
-                                    .onAppear { condTileHeight = proxy.size.height }
-                                    .onChange(of: proxy.size.height) { _, new in condTileHeight = new }
-                            }
-                        )
                 }
 
                 Card(title: "Speed, RPM, DRS & Gear", height: speedH) {
@@ -644,10 +637,14 @@ struct CarConditionGrid: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                DamageSVGView(filename: "car_overlay", damage: [:])
-                    .padding(12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .aspectRatio(contentMode: .fit)
+                VStack { // center the car overlay vertically
+                    Spacer(minLength: 0)
+                    DamageSVGView(filename: "car_overlay", damage: [:])
+                        .frame(height: 150)
+                        .aspectRatio(contentMode: .fit)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 VStack(spacing: 16) {
                     TyreStack(label: "FRONT RIGHT", wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0)

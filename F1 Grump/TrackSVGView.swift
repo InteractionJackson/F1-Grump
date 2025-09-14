@@ -81,8 +81,8 @@ final class TrackSVGContainer: UIView {
             let shape = CAShapeLayer()
             shape.path = p.cgPath
             shape.fillColor = UIColor.white.cgColor
-            shape.strokeColor = UIColor.clear.cgColor
-            shape.lineWidth = 0
+            shape.strokeColor = UIColor.white.cgColor
+            shape.lineWidth = 1
             shape.lineJoin = .round
             shape.lineCap = .round
             baseLayer.addSublayer(shape)
