@@ -44,6 +44,13 @@ struct ContentView: View {
     #endif
     @State private var showSettings = false
 
+    // Persisted settings
+    @AppStorage("udpPort") private var udpPort: Int = 20777
+    @AppStorage("showCarConditionTile") private var showCarConditionTile: Bool = true
+    @AppStorage("showSpeedTile") private var showSpeedTile: Bool = true
+    @AppStorage("showSplitsTile") private var showSplitsTile: Bool = true
+    @AppStorage("showTrackTile") private var showTrackTile: Bool = true
+
     // (kept for your reference)
     private let leftTopRatio: CGFloat = 0.70
     private let rightTopRatio: CGFloat = 0.30
@@ -99,7 +106,7 @@ struct ContentView: View {
             SettingsView()
         }
         .onAppear {
-            rx.start()
+            rx.start(port: UInt16(udpPort))
             if outlineSegments.isEmpty {
                 // Empty-state: prefer the SVG asset for Silverstone
                 selectedTrack = "Silverstone"
@@ -119,6 +126,10 @@ struct ContentView: View {
             }
             print("DESIGN_PREVIEW=", designPreview)
             #endif
+        }
+        .onChange(of: udpPort) { _, newPort in
+            rx.stop()
+            rx.start(port: UInt16(newPort))
         }
         .onDisappear {
             rx.stop()
@@ -146,21 +157,25 @@ struct ContentView: View {
             let condH = hAvailable * 0.60
             let speedH = hAvailable * 0.40
             VStack(alignment: .leading, spacing: spacing) {
-                Card(title: "Car condition & damage", height: condH) {
-                    CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
+                if showCarConditionTile {
+                    Card(title: "Car condition & damage", height: condH) {
+                        CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
+                    }
                 }
 
-                Card(title: "Speed, RPM, DRS & Gear", height: speedH) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        SpeedRpmTile(rx: rx, rpmRedline: 12000)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
-                            .background(
-                                GeometryReader { proxy in
-                                    Color.clear
-                                        .onAppear { speedTileHeight = proxy.size.height }
-                                        .onChange(of: proxy.size.height) { _, new in speedTileHeight = new }
-                                }
-                            )
+                if showSpeedTile {
+                    Card(title: "Speed, RPM, DRS & Gear", height: speedH) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            SpeedRpmTile(rx: rx, rpmRedline: 12000)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .background(
+                                    GeometryReader { proxy in
+                                        Color.clear
+                                            .onAppear { speedTileHeight = proxy.size.height }
+                                            .onChange(of: proxy.size.height) { _, new in speedTileHeight = new }
+                                    }
+                                )
+                        }
                     }
                 }
             }
@@ -176,32 +191,36 @@ struct ContentView: View {
             let hTop = hAvailable * 0.40
             let hBottom = hAvailable * 0.60
             VStack(alignment: .leading, spacing: spacing) {
-                Card(title: "Splits", height: hTop) {
-                    LapSplitsView(rx: rx)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                if showSplitsTile {
+                    Card(title: "Splits", height: hTop) {
+                        LapSplitsView(rx: rx)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
                 }
 
-                Card(title: "Track position (overhead)", height: hBottom) {
-                    GeometryReader { g in
-                        let w = g.size.width * 0.80
-                        ZStack {
-                            // Prefer new SVG assets, fallback to geojson, then to fetched PNG
-                            TrackSVGView(
-                                filename: selectedTrack.isEmpty ? "Silverstone" : selectedTrack,
-                                carPoints: rx.carPoints,
-                                playerIndex: rx.playerCarIndex
-                            )
-                                .opacity(1)
-                            EmptyView() // legacy GeoJSON layer removed from view
-                            if let ui = circuitFetcher.image, outlineSegments.isEmpty {
-                                Image(uiImage: ui)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .opacity(0.0) // keep as last resort (disabled for now)
+                if showTrackTile {
+                    Card(title: "Track position (overhead)", height: hBottom) {
+                        GeometryReader { g in
+                            let w = g.size.width * 0.80
+                            ZStack {
+                                // Prefer new SVG assets, fallback to geojson, then to fetched PNG
+                                TrackSVGView(
+                                    filename: selectedTrack.isEmpty ? "Silverstone" : selectedTrack,
+                                    carPoints: rx.carPoints,
+                                    playerIndex: rx.playerCarIndex
+                                )
+                                    .opacity(1)
+                                EmptyView() // legacy GeoJSON layer removed from view
+                                if let ui = circuitFetcher.image, outlineSegments.isEmpty {
+                                    Image(uiImage: ui)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .opacity(0.0) // keep as last resort (disabled for now)
+                                }
                             }
+                            .frame(width: w, height: w)
+                            .position(x: g.size.width / 2, y: g.size.height / 2)
                         }
-                        .frame(width: w, height: w)
-                        .position(x: g.size.width / 2, y: g.size.height / 2)
                     }
                 }
             }
@@ -773,17 +792,49 @@ struct GaugeBar: View {
 }
 
 struct SettingsView: View {
+    @AppStorage("udpPort") private var udpPort: Int = 20777
+    @AppStorage("showCarConditionTile") private var showCarConditionTile: Bool = true
+    @AppStorage("showSpeedTile") private var showSpeedTile: Bool = true
+    @AppStorage("showSplitsTile") private var showSplitsTile: Bool = true
+    @AppStorage("showTrackTile") private var showTrackTile: Bool = true
+    @State private var portText: String = ""
+
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("General")) {
                     Toggle("Design Preview", isOn: .constant(false))
-                    Text("Settings go here")
+                }
+                Section(header: Text("Telemetry")) {
+                    HStack {
+                        Text("UDP Port")
+                        Spacer()
+                        TextField("20777", text: Binding(
+                            get: { portText.isEmpty ? String(udpPort) : portText },
+                            set: { portText = $0 }
+                        ))
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .onSubmit { applyPort() }
+                        .onDisappear { applyPort() }
+                        .frame(width: 100)
+                    }
+                }
+                Section(header: Text("Visible Tiles")) {
+                    Toggle("Car condition & damage", isOn: $showCarConditionTile)
+                    Toggle("Speed, RPM, DRS & Gear", isOn: $showSpeedTile)
+                    Toggle("Splits", isOn: $showSplitsTile)
+                    Toggle("Track position (overhead)", isOn: $showTrackTile)
                 }
             }
             .navigationTitle("Settings")
         }
         .frame(minWidth: 400, minHeight: 300)
+    }
+
+    private func applyPort() {
+        if let p = Int(portText), p > 0 && p < 65536 { udpPort = p }
+        portText = ""
     }
 }
 
