@@ -636,16 +636,10 @@ struct CarConditionGrid: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.p3(0.188, 0.857, 0.277, 0.14))
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.p3(0.188, 0.857, 0.277), lineWidth: 0.83)
-                    DamageSVGView(filename: "car_overlay", damage: [:])
-                        .padding(12)
-                        .aspectRatio(contentMode: .fit)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                DamageSVGView(filename: "car_overlay", damage: [:])
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .aspectRatio(contentMode: .fit)
 
                 VStack(spacing: 16) {
                     TyreStack(label: "FRONT RIGHT", wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0)
@@ -664,7 +658,6 @@ private struct TyreStack: View {
     let brake: Int
     var body: some View {
         VStack(spacing: 8) {
-            TyreRow(label: label, value: nil)
             TyreRow(label: "CONDITION", value: "\(wear)%")
             TyreRow(label: "TEMP", value: "\(temp)°")
             TyreRow(label: "BRAKES", value: "\(brake)°")
