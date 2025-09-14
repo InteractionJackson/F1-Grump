@@ -630,13 +630,13 @@ struct CarConditionGrid: View {
     var body: some View {
         GeometryReader { geo in
             let colSpacing: CGFloat = 24
-            let carW: CGFloat = 150
+            let carW: CGFloat = 80
             let sideW = max(0, (geo.size.width - carW - 2 * colSpacing) / 2)
             ZStack { // keep car centered across the whole tile
                 // Centered car overlay
                 GeometryReader { g in
                     DamageSVGView(filename: "car_overlay", damage: [:])
-                        .frame(height: 125)
+                        .frame(width: 80, height: 200)
                         .aspectRatio(contentMode: .fit)
                         .position(x: g.size.width / 2, y: g.size.height / 2)
                 }
