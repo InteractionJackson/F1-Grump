@@ -328,13 +328,16 @@ private struct CurrentLapBox: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
             VStack(alignment: .leading, spacing: 8) {   // 8px between rows
-                HStack {
+                HStack(spacing: 8) {
+                    Text("CURRENT LAP")
+                        .font(.gaugeLabel)
+                        .foregroundColor(.labelEmphasised)
+                        .kerning(0.9)
                     Spacer()
                     Text(fmtLap(timeMS))
                         .font(.titleEmphasised)
                         .monospacedDigit()
                         .foregroundColor(.textPrimary)
-                    Spacer()
                 }
                 HStack(spacing: 8) {                      // 8px between sector boxes
                     SectorBox(titleBelow: "S1", timeMS: s1, color: c1)
@@ -511,7 +514,7 @@ struct SpeedRpmTile: View {
                 }
                 .frame(height: 68)
 
-                VStack(spacing: 16) {
+                VStack(spacing: 4) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color.tileBG)
@@ -679,10 +682,12 @@ private struct TyreRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.tileBorder, lineWidth: 1)
             HStack(spacing: 8) {
-                Text(label)
-                    .font(.gaugeLabel)
-                    .foregroundColor(.labelEmphasised)
-                    .kerning(0.9)
+                if value != nil { // omit location label rows entirely
+                    Text(label)
+                        .font(.gaugeLabel)
+                        .foregroundColor(.labelEmphasised)
+                        .kerning(0.9)
+                }
                 Spacer()
                 if let v = value {
                     Text(v)
