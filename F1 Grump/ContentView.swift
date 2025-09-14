@@ -75,8 +75,6 @@ struct ContentView: View {
                 showSettings = true
             }
             .padding(.horizontal, 24)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
 
             GeometryReader { geo in
                 let spacing: CGFloat = 16
@@ -709,7 +707,7 @@ struct HeaderView: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                AppLogoView().frame(height: 38.4)
+                AppLogoView().frame(height: 48)
                 if !title.isEmpty {
                     Text(title)
                         .font(.custom("Inter", size: 22).weight(.semibold))
@@ -733,6 +731,7 @@ struct HeaderView: View {
             }
             .buttonStyle(.plain)
         }
+        .frame(height: 48)
     }
 }
 
