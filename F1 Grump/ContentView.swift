@@ -637,14 +637,12 @@ struct CarConditionGrid: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                VStack { // center the car overlay vertically
-                    Spacer(minLength: 0)
+                ZStack { // perfectly center the car overlay within the middle column
                     DamageSVGView(filename: "car_overlay", damage: [:])
                         .frame(height: 150)
                         .aspectRatio(contentMode: .fit)
-                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
 
                 VStack(spacing: 16) {
                     TyreStack(label: "FRONT RIGHT", wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0)
