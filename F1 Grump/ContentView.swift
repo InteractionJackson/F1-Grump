@@ -75,6 +75,8 @@ struct ContentView: View {
                 showSettings = true
             }
             .padding(.horizontal, 24)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
             GeometryReader { geo in
                 let spacing: CGFloat = 16
