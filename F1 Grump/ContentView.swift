@@ -630,12 +630,13 @@ struct CarConditionGrid: View {
     var body: some View {
         GeometryReader { geo in
             let colSpacing: CGFloat = 24
+            let colW = max(0, (geo.size.width - 2 * colSpacing) / 3)
             HStack(alignment: .center, spacing: colSpacing) {
                 VStack(spacing: 16) {
                     TyreStack(label: "FRONT LEFT", wear: wear[safe:0] ?? 0, temp: temps[safe:0] ?? 0, brake: brakes[safe:0] ?? 0)
                     TyreStack(label: "REAR LEFT", wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0, brake: brakes[safe:2] ?? 0)
                 }
-                .frame(maxWidth: .infinity)
+                .frame(width: colW)
 
                 GeometryReader { g in
                     DamageSVGView(filename: "car_overlay", damage: [:])
@@ -643,13 +644,13 @@ struct CarConditionGrid: View {
                         .aspectRatio(contentMode: .fit)
                         .position(x: g.size.width / 2, y: g.size.height / 2)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: colW, height: geo.size.height)
 
                 VStack(spacing: 16) {
                     TyreStack(label: "FRONT RIGHT", wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0)
                     TyreStack(label: "REAR RIGHT", wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0, brake: brakes[safe:3] ?? 0)
                 }
-                .frame(maxWidth: .infinity)
+                .frame(width: colW)
             }
         }
     }
