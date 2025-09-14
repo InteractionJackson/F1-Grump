@@ -143,11 +143,18 @@ struct ContentView: View {
         GeometryReader { colGeo in
             let spacing: CGFloat = 16
             let hAvailable = colGeo.size.height - spacing
-            let speedH = max(0, speedTileHeight)
-            let condH = max(0, hAvailable - speedH)
+            let condH = max(0, condTileHeight)
+            let speedH = max(0, hAvailable - condH)
             VStack(alignment: .leading, spacing: spacing) {
                 Card(title: "Car condition & damage", height: condH) {
                     CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear
+                                    .onAppear { condTileHeight = proxy.size.height }
+                                    .onChange(of: proxy.size.height) { _, new in condTileHeight = new }
+                            }
+                        )
                 }
 
                 Card(title: "Speed, RPM, DRS & Gear", height: speedH) {
@@ -642,7 +649,7 @@ struct CarConditionGrid: View {
                 }
                 // Side stacks with fixed equal widths
                 HStack(alignment: .center, spacing: colSpacing) {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 24) {
                         TyreStack(wear: wear[safe:0] ?? 0, temp: temps[safe:0] ?? 0, brake: brakes[safe:0] ?? 0)
                         TyreStack(wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0, brake: brakes[safe:2] ?? 0)
                     }
@@ -650,7 +657,7 @@ struct CarConditionGrid: View {
 
                     Color.clear.frame(width: carW) // placeholder space for the car
 
-                    VStack(spacing: 16) {
+                    VStack(spacing: 24) {
                         TyreStack(wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0)
                         TyreStack(wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0, brake: brakes[safe:3] ?? 0)
                     }
