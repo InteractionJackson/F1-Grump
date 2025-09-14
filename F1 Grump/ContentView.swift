@@ -53,6 +53,7 @@ struct ContentView: View {
     @State private var outlineSegments: [[CGPoint]] = []
     @StateObject private var circuitFetcher = CircuitImageFetcher()
     @State private var speedTileHeight: CGFloat = 0
+    @State private var condTileHeight: CGFloat = 0
 
     @State private var demoDamage: [String: CGFloat] = [
         "front_wing_left": 0.2,
@@ -142,11 +143,18 @@ struct ContentView: View {
         GeometryReader { colGeo in
             let spacing: CGFloat = 16
             let hAvailable = colGeo.size.height - spacing
-            let speedH = max(0, speedTileHeight)
-            let condH = max(0, hAvailable - speedH)
+            let condH = min(hAvailable, max(0, condTileHeight))
+            let speedH = max(0, hAvailable - condH)
             VStack(alignment: .leading, spacing: spacing) {
                 Card(title: "Car condition & damage", height: condH) {
                     CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear
+                                    .onAppear { condTileHeight = proxy.size.height }
+                                    .onChange(of: proxy.size.height) { _, new in condTileHeight = new }
+                            }
+                        )
                 }
 
                 Card(title: "Speed, RPM, DRS & Gear", height: speedH) {
