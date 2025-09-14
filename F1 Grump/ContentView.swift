@@ -39,9 +39,6 @@ private extension View {
 
 struct ContentView: View {
     @StateObject private var rx = TelemetryReceiver()
-    #if DEBUG
-    private let designPreview: Bool = ProcessInfo.processInfo.environment["DESIGN_PREVIEW"] == "1"
-    #endif
     @State private var showSettings = false
 
     // Persisted settings
@@ -115,17 +112,7 @@ struct ContentView: View {
             if let url = URL(string: "https://www.formula1.com/en/racing/2025/italy") {
                 circuitFetcher.fetch(from: url)
             }
-            #if DEBUG
-            if designPreview {
-                // Force visual states so styles are obvious without live data
-                rx.drsOpen = true
-                // Overall best < personal best < shown (mix to demo colors)
-                rx.overallBestSectorMS = [32000, 62000, 45000]
-                rx.bestSectorMS        = [33000, 65000, 47000]
-                rx.lastSectorMS        = [32000, 64000, 48000] // S1 fastest (purple), S2 PB (green), S3 over (gold)
-            }
-            print("DESIGN_PREVIEW=", designPreview)
-            #endif
+            
         }
         .onChange(of: udpPort) { _, newPort in
             rx.stop()
@@ -134,17 +121,7 @@ struct ContentView: View {
         .onDisappear {
             rx.stop()
         }
-        #if DEBUG
-        .overlay(alignment: .top) {
-            if designPreview {
-                Text("Design Preview ON")
-                    .font(.caption.weight(.semibold))
-                    .padding(6)
-                    .background(Color.red.opacity(0.8), in: Capsule())
-                    .padding(.top, 8)
-            }
-        }
-        #endif
+        
     }
 
     // MARK: Left column
