@@ -47,6 +47,12 @@ final class TelemetryReceiver: ObservableObject {
     private var maxX: Float = -.greatestFiniteMagnitude
     private var minZ: Float = .greatestFiniteMagnitude
     private var maxZ: Float = -.greatestFiniteMagnitude
+    private var boundsFrozen: Bool = false
+    private var frozenMinX: Float = 0
+    private var frozenMaxX: Float = 1
+    private var frozenMinZ: Float = 0
+    private var frozenMaxZ: Float = 1
+    private var motionFramesObserved: Int = 0
     @Published var carPoints: [CGPoint] = Array(repeating: .zero, count: 22) // all cars, normalized 0..1
     @Published var playerCarIndex: Int = 0
     @Published var trackName: String = ""    // e.g., "Silverstone"
@@ -237,7 +243,7 @@ final class TelemetryReceiver: ObservableObject {
         var worldXs = [Float](repeating: 0, count: carCount)
         var worldZs = [Float](repeating: 0, count: carCount)
 
-        // 1) Read world positions for all cars; expand global bounds
+        // 1) Read world positions for all cars; expand global bounds (until frozen)
         for idx in 0..<carCount {
             let base = headerSize + (idx * perCarSize)
             guard base + 12 <= data.count else { continue }
@@ -246,20 +252,41 @@ final class TelemetryReceiver: ObservableObject {
             worldXs[idx] = wx
             worldZs[idx] = wz
 
-            if wx < minX { minX = wx }; if wx > maxX { maxX = wx }
-            if wz < minZ { minZ = wz }; if wz > maxZ { maxZ = wz }
+            if !boundsFrozen {
+                if wx < minX { minX = wx }; if wx > maxX { maxX = wx }
+                if wz < minZ { minZ = wz }; if wz > maxZ { maxZ = wz }
+            }
+        }
+
+        // After a brief warm-up, freeze bounds to keep the map static
+        if !boundsFrozen {
+            motionFramesObserved += 1
+            let dxProbe = maxX - minX
+            let dzProbe = maxZ - minZ
+            if motionFramesObserved >= 60 && dxProbe > 1e-3 && dzProbe > 1e-3 { // ~3s at 20Hz
+                frozenMinX = minX; frozenMaxX = maxX
+                frozenMinZ = minZ; frozenMaxZ = maxZ
+                boundsFrozen = true
+                #if DEBUG
+                print("Motion: bounds frozen dx=\(dxProbe) dz=\(dzProbe)")
+                #endif
+            }
         }
 
         // 2) Normalize into 0..1 square; preserve aspect ratio by scaling to the longer axis
-        let dx = max(0.001, maxX - minX)
-        let dz = max(0.001, maxZ - minZ)
+        let useMinX = boundsFrozen ? frozenMinX : minX
+        let useMaxX = boundsFrozen ? frozenMaxX : maxX
+        let useMinZ = boundsFrozen ? frozenMinZ : minZ
+        let useMaxZ = boundsFrozen ? frozenMaxZ : maxZ
+        let dx = max(0.001, useMaxX - useMinX)
+        let dz = max(0.001, useMaxZ - useMinZ)
         let scale = max(dx, dz)
 
         var points = [CGPoint]()
         points.reserveCapacity(carCount)
         for idx in 0..<carCount {
-            let nx = (worldXs[idx] - minX) / scale
-            let nz = (worldZs[idx] - minZ) / scale
+            let nx = (worldXs[idx] - useMinX) / scale
+            let nz = (worldZs[idx] - useMinZ) / scale
             points.append(CGPoint(x: CGFloat(nx), y: CGFloat(nz)))
         }
 
@@ -470,9 +497,24 @@ extension TelemetryReceiver {
                 if self.trackName != name {
                     print("Session: trackId=\(id) → \(name)")
                     self.trackName = name
+                    self.resetTrackBounds()
                 }
             }
         }
+    }
+
+    private func resetTrackBounds() {
+        minX = .greatestFiniteMagnitude
+        maxX = -.greatestFiniteMagnitude
+        minZ = .greatestFiniteMagnitude
+        maxZ = -.greatestFiniteMagnitude
+        boundsFrozen = false
+        frozenMinX = 0; frozenMaxX = 1
+        frozenMinZ = 0; frozenMaxZ = 1
+        motionFramesObserved = 0
+        #if DEBUG
+        print("Motion: bounds reset")
+        #endif
     }
     
     private func receive(on connection: NWConnection) {
