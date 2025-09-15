@@ -43,9 +43,9 @@ final class TrackSVGContainer: UIView {
         super.init(frame: frame)
         isOpaque = false
         layer.addSublayer(baseLayer)
-        dotsLayer.fillColor = UIColor.white.cgColor
-        dotsLayer.strokeColor = UIColor.black.withAlphaComponent(0.35).cgColor
-        dotsLayer.lineWidth = 1
+        dotsLayer.fillColor = UIColor.black.cgColor
+        dotsLayer.strokeColor = UIColor.clear.cgColor
+        dotsLayer.lineWidth = 0
         baseLayer.addSublayer(dotsLayer)
         contentMode = .redraw
     }
