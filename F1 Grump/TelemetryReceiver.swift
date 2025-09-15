@@ -51,38 +51,47 @@ final class TelemetryReceiver: ObservableObject {
     @Published var playerCarIndex: Int = 0
 
     private var conn: NWConnection?
+    private var listener: NWListener?
     private let q = DispatchQueue(label: "f1.telemetry")
 
     // MARK: - Start/Stop
     func start(port: UInt16 = 20777) {
-            let p = NWEndpoint.Port(rawValue: port)!
-            // Bind to “any” on this port and receive datagrams
-            let c = NWConnection(host: .ipv4(.any), port: p, using: .udp)
-            conn = c
-            c.stateUpdateHandler = { state in
-                print("UDP state:", state)
+        stop()
+        guard let p = NWEndpoint.Port(rawValue: port) else { return }
+
+        let params = NWParameters.udp
+        params.allowLocalEndpointReuse = true
+        do {
+            let l = try NWListener(using: params, on: p)
+            listener = l
+            l.stateUpdateHandler = { state in
+                print("UDP listener state:", state)
             }
-            c.start(queue: q)
-            receiveLoop()
+            l.newConnectionHandler = { [weak self] connection in
+                guard let self else { return }
+                print("UDP new connection from:", connection.endpoint)
+                connection.stateUpdateHandler = { st in
+                    print("UDP conn state:", st)
+                }
+                self.conn = connection
+                connection.start(queue: self.q)
+                self.receive(on: connection)
+            }
+            print("UDP listening on port", port)
+            l.start(queue: q)
+        } catch {
+            print("Failed to start UDP listener:", error)
         }
+    }
 
     func stop() {
-            conn?.cancel()
-            conn = nil
-        }
+        listener?.cancel()
+        listener = nil
+        conn?.cancel()
+        conn = nil
+    }
 
-        private func receiveLoop() {
-            conn?.receiveMessage { [weak self] data, _, _, error in
-                if let d = data {
-                    print("UDP bytes:", d.count) // <-- should spam while the game is sending
-                    self?.handle(packet: d)
-                } else if let error {
-                    print("UDP error:", error)
-                }
-                // keep listening
-                self?.receiveLoop()
-            }
-        }
+        private func receiveLoop() { /* deprecated by receive(on:) */ }
 
     // MARK: - Demux
     private func handle(packet data: Data) {
