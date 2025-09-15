@@ -30,6 +30,7 @@ final class TrackSVGContainer: UIView {
     private var normalizedPoints: [CGPoint] = []
     private var playerIdx: Int = 0
     private var currentName = ""
+    private var fittedRect: CGRect = .zero
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -81,8 +82,8 @@ final class TrackSVGContainer: UIView {
             let shape = CAShapeLayer()
             shape.path = p.cgPath
             shape.fillColor = UIColor.white.cgColor
-            shape.strokeColor = UIColor.white.cgColor
-            shape.lineWidth = 1
+            shape.strokeColor = UIColor.clear.cgColor
+            shape.lineWidth = 0
             shape.lineJoin = .round
             shape.lineCap = .round
             baseLayer.addSublayer(shape)
@@ -139,6 +140,8 @@ final class TrackSVGContainer: UIView {
         guard union.width > 0, union.height > 0 else { return }
         let t = aspectFitTransform(for: union, in: bounds)
         for l in layers { l.setAffineTransform(t) }
+        // Cache the fitted drawing rect (where the track was drawn)
+        fittedRect = union.applying(t)
         renderDots()
     }
 
@@ -147,9 +150,11 @@ final class TrackSVGContainer: UIView {
         let path = UIBezierPath()
         let rOthers: CGFloat = 3
         let rPlayer: CGFloat = 5
+        // Use the same fitted rect as the SVG so dots sit on top correctly
+        let rect = (fittedRect.width > 0 && fittedRect.height > 0) ? fittedRect : bounds
         for (i, p) in normalizedPoints.enumerated() {
-            let x = bounds.minX + CGFloat(p.x) * bounds.width
-            let y = bounds.minY + (1 - CGFloat(p.y)) * bounds.height
+            let x = rect.minX + CGFloat(p.x) * rect.width
+            let y = rect.minY + (1 - CGFloat(p.y)) * rect.height
             let r = (i == playerIdx) ? rPlayer : rOthers
             let rect = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
             path.append(UIBezierPath(ovalIn: rect))

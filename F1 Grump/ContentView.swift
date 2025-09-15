@@ -105,8 +105,7 @@ struct ContentView: View {
         .onAppear {
             rx.start(port: UInt16(udpPort))
             if outlineSegments.isEmpty {
-                // Empty-state: prefer the SVG asset for Silverstone
-                selectedTrack = "Silverstone"
+                selectedTrack = "Silverstone" // empty-state default
             }
             // Kick off fetching the F1.com circuit image for fallback display
             if let url = URL(string: "https://www.formula1.com/en/racing/2025/italy") {
@@ -117,6 +116,11 @@ struct ContentView: View {
         .onChange(of: udpPort) { _, newPort in
             rx.stop()
             rx.start(port: UInt16(newPort))
+        }
+        .onChange(of: rx.trackName) { _, newName in
+            if !newName.isEmpty {
+                selectedTrack = newName
+            }
         }
         .onDisappear {
             rx.stop()

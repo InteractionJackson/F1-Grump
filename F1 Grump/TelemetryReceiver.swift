@@ -49,6 +49,7 @@ final class TelemetryReceiver: ObservableObject {
     private var maxZ: Float = -.greatestFiniteMagnitude
     @Published var carPoints: [CGPoint] = Array(repeating: .zero, count: 22) // all cars, normalized 0..1
     @Published var playerCarIndex: Int = 0
+    @Published var trackName: String = ""    // e.g., "Silverstone"
 
     private var conn: NWConnection?
     private var listener: NWListener?
@@ -142,6 +143,7 @@ final class TelemetryReceiver: ObservableObject {
         case 6:  parseCarTelemetry(data, headerSize: headerSize, playerIndex: playerIndex)
         case 10: parseCarDamage(data, headerSize: headerSize, playerIndex: playerIndex)
         case 7:  parseCarStatus(data, headerSize: headerSize, playerIndex: playerIndex) // ERS, flags, etc.
+        case 1:  parseSession(data, headerSize: headerSize) // trackId, weather, etc.
         default: break
         }
     }
@@ -248,15 +250,16 @@ final class TelemetryReceiver: ObservableObject {
             if wz < minZ { minZ = wz }; if wz > maxZ { maxZ = wz }
         }
 
-        // 2) Normalize into 0..1 square (same scheme you use for the single dot)
+        // 2) Normalize into 0..1 square; preserve aspect ratio by scaling to the longer axis
         let dx = max(0.001, maxX - minX)
         let dz = max(0.001, maxZ - minZ)
+        let scale = max(dx, dz)
 
         var points = [CGPoint]()
         points.reserveCapacity(carCount)
         for idx in 0..<carCount {
-            let nx = (worldXs[idx] - minX) / dx
-            let nz = (worldZs[idx] - minZ) / dz
+            let nx = (worldXs[idx] - minX) / scale
+            let nz = (worldZs[idx] - minZ) / scale
             points.append(CGPoint(x: CGFloat(nx), y: CGFloat(nz)))
         }
 
@@ -352,6 +355,9 @@ extension TelemetryReceiver {
             self.lastLapMS     = lastLap
             self.sectorMS      = [s1, s2, s3Guess]
             self.overallBestSectorMS = overall
+            if self.packetCount % 30 == 0 {
+                print("LapData: lap=\(lapNum) curr=\(current) last=\(lastLap) s=[\(s1),\(s2),\(s3Guess)] overall=[\(overall[0]),\(overall[1]),\(overall[2])]")
+            }
         }
     }
 
@@ -407,6 +413,32 @@ extension TelemetryReceiver {
             self.bestLapMS    = bestLap
             self.lastSectorMS = [lS1, lS2, lS3]
             self.bestSectorMS = bestSectors
+            if self.packetCount % 30 == 0 {
+                print("SessHistory: lastLap=\(lastLap) bestLap=\(bestLap) bestS=[\(bestSectors[0]),\(bestSectors[1]),\(bestSectors[2])]")
+            }
+        }
+    }
+
+    /// Session packet (trackId, etc.)
+    private func parseSession(_ data: Data, headerSize: Int) {
+        // Heuristic offsets compatible with recent F1 formats:
+        // After header: weather(u8), trackTemp(i8), airTemp(i8), totalLaps(u8), trackLength(u16), sessionType(u8), trackId(i8), ...
+        // Try a couple of nearby offsets for robustness.
+        let candidates: [Int] = [7, 8, 9, 10]
+        var id: Int8 = -127
+        for off in candidates {
+            let v = Int8(bitPattern: data.readU8(offset: headerSize + off))
+            if v >= -1 && v <= 127 { id = v; break }
+        }
+        let name = TrackMap.name(for: Int(id))
+        if !name.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if self.trackName != name {
+                    print("Session: trackId=\(id) → \(name)")
+                    self.trackName = name
+                }
+            }
         }
     }
     
