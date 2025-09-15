@@ -141,6 +141,13 @@ struct ContentView: View {
                 if showCarConditionTile {
                     Card(title: "Car condition & damage", height: condH) {
                         CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
+                            .overlay(
+                                GeometryReader { g in
+                                    DamageSVGView(filename: "car_overlay", damage: rx.overlayDamage)
+                                        .frame(width: 80, height: 200)
+                                        .position(x: g.size.width / 2, y: g.size.height / 2)
+                                }
+                            )
                     }
                 }
 

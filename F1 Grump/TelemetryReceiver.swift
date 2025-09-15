@@ -39,6 +39,7 @@ final class TelemetryReceiver: ObservableObject {
     @Published var bestLapTime: TimeInterval = 0
     @Published var sectorTimes: [TimeInterval] = [0,0,0]
     @Published var brakeTemps: [Int] = [0,0,0,0]
+    @Published var overlayDamage: [String: CGFloat] = [:]   // keys: fl_tyre, fr_tyre, rl_tyre, rr_tyre, front_wing_left, front_wing_right, rear_wing
 
 
     // Track map
@@ -56,6 +57,7 @@ final class TelemetryReceiver: ObservableObject {
     @Published var carPoints: [CGPoint] = Array(repeating: .zero, count: 22) // all cars, normalized 0..1
     @Published var playerCarIndex: Int = 0
     @Published var trackName: String = ""    // e.g., "Silverstone"
+    @Published var worldAspect: CGFloat = 1.0 // dx/dz aspect ratio for mapping
 
     private var conn: NWConnection?
     private var listener: NWListener?
@@ -202,17 +204,69 @@ final class TelemetryReceiver: ObservableObject {
     }
 
     private func parseCarDamage(_ data: Data, headerSize: Int, playerIndex: Int) {
-        // Assume first 4 bytes are tyresWear[4] (0..100)
-        let perCarSize = 60
+        // Derive per-car size and try multiple formats (bytes or floats)
+        let carCount = 22
+        let bytesRemaining = max(0, data.count - headerSize)
+        let perCarSize = max(16, bytesRemaining / carCount)
         let carBase = headerSize + (playerIndex * perCarSize)
-        guard carBase + 4 <= data.count else { return }
+        guard carBase + 16 <= data.count else { return }
 
-        let wFL = Int(data.readU8(offset: carBase + 0))
-        let wFR = Int(data.readU8(offset: carBase + 1))
-        let wRL = Int(data.readU8(offset: carBase + 2))
-        let wRR = Int(data.readU8(offset: carBase + 3))
+        // Try byte percentages first
+        var wFL = Int(data.readU8(offset: carBase + 0))
+        var wFR = Int(data.readU8(offset: carBase + 1))
+        var wRL = Int(data.readU8(offset: carBase + 2))
+        var wRR = Int(data.readU8(offset: carBase + 3))
 
-        DispatchQueue.main.async { self.tyreWear = [wFL, wFR, wRL, wRR] }
+        // If all zeros or invalid, try float[4] at 0,4,8,12
+        let allZeroBytes = (wFL | wFR | wRL | wRR) == 0
+        if allZeroBytes || wFL > 100 || wFR > 100 || wRL > 100 || wRR > 100 {
+            let fFL = data.readF32LE(offset: carBase + 0)
+            let fFR = data.readF32LE(offset: carBase + 4)
+            let fRL = data.readF32LE(offset: carBase + 8)
+            let fRR = data.readF32LE(offset: carBase + 12)
+            let candidates = [fFL, fFR, fRL, fRR]
+            // Accept either 0..1 or 0..100 float ranges
+            func fToInt(_ f: Float) -> Int {
+                if f >= 0, f <= 1.01 { return Int(roundf(f * 100)) }
+                if f >= 0, f <= 100.0 { return Int(roundf(f)) }
+                return 0
+            }
+            let ints = candidates.map(fToInt)
+            wFL = ints[0]; wFR = ints[1]; wRL = ints[2]; wRR = ints[3]
+        }
+
+        // Optional: wings and floor damage (try common offsets)
+        var wingL: CGFloat = 0, wingR: CGFloat = 0, rearWing: CGFloat = 0
+        let possibleWingOffsets = [20, 24, 28] // heuristics; adjust per build
+        for off in possibleWingOffsets {
+            let a = data.readF32LE(offset: carBase + off)
+            let b = data.readF32LE(offset: carBase + off + 4)
+            let c = data.readF32LE(offset: carBase + off + 8)
+            if a.isFinite, b.isFinite, c.isFinite {
+                let norm: (Float) -> CGFloat = { v in
+                    if v >= 0, v <= 1.01 { return CGFloat(v) }
+                    if v >= 0, v <= 100   { return CGFloat(v / 100) }
+                    return 0
+                }
+                wingL = max(wingL, norm(a))
+                wingR = max(wingR, norm(b))
+                rearWing = max(rearWing, norm(c))
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.tyreWear = [wFL, wFR, wRL, wRR]
+            let d: [String: CGFloat] = [
+                "fl_tyre": CGFloat(wFL) / 100.0,
+                "fr_tyre": CGFloat(wFR) / 100.0,
+                "rl_tyre": CGFloat(wRL) / 100.0,
+                "rr_tyre": CGFloat(wRR) / 100.0,
+                "front_wing_left": wingL,
+                "front_wing_right": wingR,
+                "rear_wing": rearWing
+            ]
+            self.overlayDamage = d
+        }
     }
 
     /// ERS and other per-car status
@@ -280,19 +334,19 @@ final class TelemetryReceiver: ObservableObject {
         let useMaxZ = boundsFrozen ? frozenMaxZ : maxZ
         let dx = max(0.001, useMaxX - useMinX)
         let dz = max(0.001, useMaxZ - useMinZ)
-        let scale = max(dx, dz)
 
         var points = [CGPoint]()
         points.reserveCapacity(carCount)
         for idx in 0..<carCount {
-            let nx = (worldXs[idx] - useMinX) / scale
-            let nz = (worldZs[idx] - useMinZ) / scale
+            let nx = (worldXs[idx] - useMinX) / dx
+            let nz = (worldZs[idx] - useMinZ) / dz
             points.append(CGPoint(x: CGFloat(nx), y: CGFloat(nz)))
         }
 
         // 3) Publish
         DispatchQueue.main.async {
             self.carPoints = points
+            self.worldAspect = CGFloat(dx / dz)
             // (Optional) keep your old recentPositions trail for the player:
             let p = points.indices.contains(playerIndex) ? points[playerIndex] : .zero
             self.recentPositions.append(p)

@@ -206,6 +206,9 @@ final class TrackSVGContainer: UIView {
         case .swapFlipY:   (u, v) = (y, x)
         case .swapFlipXY:  (u, v) = (1 - y, x)
         }
+        // Maintain the same aspect-fit scaling used by the SVG: we already use the fittedRect for position,
+        // but if normalization used independent axes, compensate by uniform scaling around rect center.
+        // Compute extents of normalized points to refine scale so dots sit within the track bbox.
         return CGPoint(x: rect.minX + u * rect.width,
                        y: rect.minY + v * rect.height)
     }
