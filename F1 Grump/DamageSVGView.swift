@@ -84,6 +84,26 @@ final class DamageSVGContainer: UIView {
     }
 
     func applyDamage(_ damage: [String: CGFloat]) {
+        // If the SVG has distinct ids, shade per-part. Otherwise, fall back to an overall tint.
+        if layersById.count <= 1 {
+            // Overall severity: prioritize wing damage if present, else tyres
+            let wingKeys = ["front_wing_left", "front_wing_right", "rear_wing", "drs"]
+            let tyreKeys = ["fl_tyre", "fr_tyre", "rl_tyre", "rr_tyre"]
+            let wingMax = wingKeys.compactMap { damage[$0] }.max() ?? 0
+            let tyreMax = tyreKeys.compactMap { damage[$0] }.max() ?? 0
+            let pct = max(wingMax, tyreMax)
+            let color = damageColor(CGFloat(pct))
+            for layer in layersById.values {
+                layer.fillColor = color.withAlphaComponent(pct > 0 ? 0.35 : 0.08).cgColor
+                layer.strokeColor = color.cgColor
+                layer.lineWidth = pct > 0.01 ? 2.5 : 2.0
+            }
+            #if DEBUG
+            if let onlyId = layersById.keys.first { print("DamageSVG: single id '" + onlyId + "' — using overall damage =", pct) }
+            #endif
+            return
+        }
+
         for (id, layer) in layersById {
             let pct = max(0, min(1, damage[id] ?? 0))
             let color = damageColor(pct)

@@ -140,14 +140,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: spacing) {
                 if showCarConditionTile {
                     Card(title: "Car condition & damage", height: condH) {
-                        CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps)
-                            .overlay(
-                                GeometryReader { g in
-                                    DamageSVGView(filename: "car_overlay", damage: rx.overlayDamage)
-                                        .frame(width: 80, height: 200)
-                                        .position(x: g.size.width / 2, y: g.size.height / 2)
-                                }
-                            )
+                        CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps, damage: rx.overlayDamage)
                     }
                 }
 
@@ -633,6 +626,7 @@ struct CarConditionGrid: View {
     let temps: [Int]
     let wear: [Int]
     let brakes: [Int]
+    let damage: [String: CGFloat]
 
     var body: some View {
         GeometryReader { geo in
@@ -642,24 +636,26 @@ struct CarConditionGrid: View {
             ZStack { // keep car centered across the whole tile
                 // Centered car overlay
                 GeometryReader { g in
-                    DamageSVGView(filename: "car_overlay", damage: [:])
+                    DamageSVGView(filename: "car_overlay", damage: damage)
                         .frame(width: 80, height: 200)
                         .aspectRatio(contentMode: .fit)
                         .position(x: g.size.width / 2, y: g.size.height / 2)
                 }
                 // Side stacks with fixed equal widths
                 HStack(alignment: .center, spacing: colSpacing) {
+                    // Left column should show REAR LEFT above FRONT LEFT
                     VStack(spacing: 24) {
-                        TyreStack(wear: wear[safe:0] ?? 0, temp: temps[safe:0] ?? 0, brake: brakes[safe:0] ?? 0)
-                        TyreStack(wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0, brake: brakes[safe:2] ?? 0)
+                        TyreStack(wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0, brake: brakes[safe:2] ?? 0) // RL
+                        TyreStack(wear: wear[safe:0] ?? 0, temp: temps[safe:0] ?? 0, brake: brakes[safe:0] ?? 0) // FL
                     }
                     .frame(width: sideW)
 
                     Color.clear.frame(width: carW) // placeholder space for the car
 
+                    // Right column should show REAR RIGHT above FRONT RIGHT
                     VStack(spacing: 24) {
-                        TyreStack(wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0)
-                        TyreStack(wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0, brake: brakes[safe:3] ?? 0)
+                        TyreStack(wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0, brake: brakes[safe:3] ?? 0) // RR
+                        TyreStack(wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0) // FR
                     }
                     .frame(width: sideW)
                 }
@@ -674,7 +670,7 @@ private struct TyreStack: View {
     let brake: Int
     var body: some View {
         VStack(spacing: 8) {
-            TyreRow(label: "CONDITION", value: "\(wear)%")
+            TyreRow(label: "WEAR", value: "\(wear)%")
             TyreRow(label: "TEMP", value: "\(temp)°")
             TyreRow(label: "BRAKES", value: "\(brake)°")
         }

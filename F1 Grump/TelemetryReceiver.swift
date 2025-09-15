@@ -62,6 +62,7 @@ final class TelemetryReceiver: ObservableObject {
     private var conn: NWConnection?
     private var listener: NWListener?
     private let q = DispatchQueue(label: "f1.telemetry")
+    private var damageFilter: [String: CGFloat] = [:]
 
     // MARK: - Start/Stop
     func start(port: UInt16 = 20777) {
@@ -91,14 +92,14 @@ final class TelemetryReceiver: ObservableObject {
         } catch {
             print("Failed to start UDP listener:", error)
         }
-    }
+        }
 
     func stop() {
         listener?.cancel()
         listener = nil
-        conn?.cancel()
-        conn = nil
-    }
+            conn?.cancel()
+            conn = nil
+        }
 
         private func receiveLoop() { /* deprecated by receive(on:) */ }
 
@@ -204,69 +205,108 @@ final class TelemetryReceiver: ObservableObject {
     }
 
     private func parseCarDamage(_ data: Data, headerSize: Int, playerIndex: Int) {
-        // Derive per-car size and try multiple formats (bytes or floats)
+        // Derive per-car size and parse according to common F1 formats (F1 22–24)
         let carCount = 22
         let bytesRemaining = max(0, data.count - headerSize)
         let perCarSize = max(16, bytesRemaining / carCount)
         let carBase = headerSize + (playerIndex * perCarSize)
-        guard carBase + 16 <= data.count else { return }
+        guard carBase + 32 <= data.count else { return }
 
-        // Try byte percentages first
-        var wFL = Int(data.readU8(offset: carBase + 0))
-        var wFR = Int(data.readU8(offset: carBase + 1))
-        var wRL = Int(data.readU8(offset: carBase + 2))
-        var wRR = Int(data.readU8(offset: carBase + 3))
-
-        // If all zeros or invalid, try float[4] at 0,4,8,12
-        let allZeroBytes = (wFL | wFR | wRL | wRR) == 0
-        if allZeroBytes || wFL > 100 || wFR > 100 || wRL > 100 || wRR > 100 {
-            let fFL = data.readF32LE(offset: carBase + 0)
-            let fFR = data.readF32LE(offset: carBase + 4)
-            let fRL = data.readF32LE(offset: carBase + 8)
-            let fRR = data.readF32LE(offset: carBase + 12)
-            let candidates = [fFL, fFR, fRL, fRR]
-            // Accept either 0..1 or 0..100 float ranges
-            func fToInt(_ f: Float) -> Int {
-                if f >= 0, f <= 1.01 { return Int(roundf(f * 100)) }
-                if f >= 0, f <= 100.0 { return Int(roundf(f)) }
-                return 0
-            }
-            let ints = candidates.map(fToInt)
-            wFL = ints[0]; wFR = ints[1]; wRL = ints[2]; wRR = ints[3]
+        // Tyre wear: primary bytes at 16..19 (0..100); fallback to floats at 0,4,8,12
+        func fToPctInt(_ f: Float) -> Int {
+            if f.isNaN || !f.isFinite { return 0 }
+            if f >= 0, f <= 1.01 { return Int(roundf(f * 100)) }
+            if f >= 0, f <= 100.0 { return Int(roundf(f)) }
+            return 0
+        }
+        var wFL = Int(data.readU8(offset: carBase + 16))
+        var wFR = Int(data.readU8(offset: carBase + 17))
+        var wRL = Int(data.readU8(offset: carBase + 18))
+        var wRR = Int(data.readU8(offset: carBase + 19))
+        // Fallback: try floats if bytes look wrong
+        if (wFL|wFR|wRL|wRR) == 0 {
+            wFL = fToPctInt(data.readF32LE(offset: carBase + 0))
+            wFR = fToPctInt(data.readF32LE(offset: carBase + 4))
+            wRL = fToPctInt(data.readF32LE(offset: carBase + 8))
+            wRR = fToPctInt(data.readF32LE(offset: carBase + 12))
         }
 
-        // Optional: wings and floor damage (try common offsets)
+        // Optional: wings and other aero damage (try common offsets)
         var wingL: CGFloat = 0, wingR: CGFloat = 0, rearWing: CGFloat = 0
-        let possibleWingOffsets = [20, 24, 28] // heuristics; adjust per build
-        for off in possibleWingOffsets {
-            let a = data.readF32LE(offset: carBase + off)
-            let b = data.readF32LE(offset: carBase + off + 4)
-            let c = data.readF32LE(offset: carBase + off + 8)
-            if a.isFinite, b.isFinite, c.isFinite {
-                let norm: (Float) -> CGFloat = { v in
-                    if v >= 0, v <= 1.01 { return CGFloat(v) }
-                    if v >= 0, v <= 100   { return CGFloat(v / 100) }
-                    return 0
-                }
-                wingL = max(wingL, norm(a))
-                wingR = max(wingR, norm(b))
-                rearWing = max(rearWing, norm(c))
+        var floorDmg: CGFloat = 0, sidepodDmg: CGFloat = 0, drsDmg: CGFloat = 0
+        // Wing/front/rear damage are commonly bytes after brake damage
+        // TyresDamage[4] at 16..19, BrakesDamage[4] at 20..23, Wings at 24..26, Floor 27, Diffuser 28, Sidepod 29, DRS fault 30
+        wingL = CGFloat(min(100, Int(data.readU8(offset: carBase + 24)))) / 100.0
+        wingR = CGFloat(min(100, Int(data.readU8(offset: carBase + 25)))) / 100.0
+        rearWing = CGFloat(min(100, Int(data.readU8(offset: carBase + 26)))) / 100.0
+
+        // Fallback: read as bytes if float heuristics yielded 0
+        if wingL == 0 && wingR == 0 && rearWing == 0 {
+            let bFL = Int(data.readU8(offset: carBase + 4))
+            let bFR = Int(data.readU8(offset: carBase + 5))
+            let bRW = Int(data.readU8(offset: carBase + 6))
+            if bFL > 0 || bFR > 0 || bRW > 0 {
+                wingL = CGFloat(min(100, max(0, bFL))) / 100.0
+                wingR = CGFloat(min(100, max(0, bFR))) / 100.0
+                rearWing = CGFloat(min(100, max(0, bRW))) / 100.0
             }
         }
+
+        // Try nearby floats for floor and sidepod damage
+        // Floor, sidepod and DRS per common spec bytes
+        floorDmg = CGFloat(min(100, Int(data.readU8(offset: carBase + 27)))) / 100.0
+        sidepodDmg = CGFloat(min(100, Int(data.readU8(offset: carBase + 29)))) / 100.0
+        drsDmg = CGFloat(min(1, Int(data.readU8(offset: carBase + 30))))
 
         DispatchQueue.main.async {
             self.tyreWear = [wFL, wFR, wRL, wRR]
-            let d: [String: CGFloat] = [
+            if self.packetCount % 60 == 0 { print("TyreWear: FL=\(wFL)% FR=\(wFR)% RL=\(wRL)% RR=\(wRR)%") }
+            let dRaw: [String: CGFloat] = [
                 "fl_tyre": CGFloat(wFL) / 100.0,
                 "fr_tyre": CGFloat(wFR) / 100.0,
                 "rl_tyre": CGFloat(wRL) / 100.0,
                 "rr_tyre": CGFloat(wRR) / 100.0,
                 "front_wing_left": wingL,
                 "front_wing_right": wingR,
-                "rear_wing": rearWing
+                "rear_wing": rearWing,
+                "underfloor": floorDmg,
+                "underfloor_2": floorDmg,
+                "sidepod_left": sidepodDmg,
+                "sidepod_right": sidepodDmg,
+                "drs": min(1, drsDmg)
             ]
-            self.overlayDamage = d
+            self.overlayDamage = self.stabilizeDamage(dRaw)
+            if wingL > 0 || wingR > 0 || rearWing > 0 || floorDmg > 0 || sidepodDmg > 0 || drsDmg > 0 {
+                print("CarDamage: wingL=\(String(format: "%.2f", wingL)) wingR=\(String(format: "%.2f", wingR)) rear=\(String(format: "%.2f", rearWing)) floor=\(String(format: "%.2f", floorDmg)) sidepod=\(String(format: "%.2f", sidepodDmg)) drs=\(String(format: "%.0f", drsDmg))")
+            }
         }
+    }
+
+    /// Smooth tiny fluctuations and snap near-zero values to 0 to avoid color flicker.
+    private func stabilizeDamage(_ raw: [String: CGFloat]) -> [String: CGFloat] {
+        // Hysteresis thresholds
+        let snapDown: CGFloat = 0.06   // if value < 6% and previously small → 0
+        let snapUpGuard: CGFloat = 0.12 // require >12% to "wake up" from zero state
+        let alpha: CGFloat = 0.15      // low-pass smoothing
+
+        var out: [String: CGFloat] = [:]
+        for (key, rawValue) in raw {
+            var v = max(0, min(1, rawValue))
+            let prev = damageFilter[key] ?? 0
+
+            // Hysteresis snap-to-zero
+            if prev < snapUpGuard && v < snapDown { v = 0 }
+
+            // Low-pass filter
+            let smoothed = prev * (1 - alpha) + v * alpha
+
+            // Quantize to 1% steps to prevent minor color shifts
+            let quantized = (smoothed * 100).rounded() / 100
+
+            out[key] = quantized
+            damageFilter[key] = quantized
+        }
+        return out
     }
 
     /// ERS and other per-car status
@@ -307,8 +347,8 @@ final class TelemetryReceiver: ObservableObject {
             worldZs[idx] = wz
 
             if !boundsFrozen {
-                if wx < minX { minX = wx }; if wx > maxX { maxX = wx }
-                if wz < minZ { minZ = wz }; if wz > maxZ { maxZ = wz }
+            if wx < minX { minX = wx }; if wx > maxX { maxX = wx }
+            if wz < minZ { minZ = wz }; if wz > maxZ { maxZ = wz }
             }
         }
 
@@ -318,11 +358,14 @@ final class TelemetryReceiver: ObservableObject {
             let dxProbe = maxX - minX
             let dzProbe = maxZ - minZ
             if motionFramesObserved >= 60 && dxProbe > 1e-3 && dzProbe > 1e-3 { // ~3s at 20Hz
-                frozenMinX = minX; frozenMaxX = maxX
-                frozenMinZ = minZ; frozenMaxZ = maxZ
+                // Add a small margin so later points stay within [0,1]
+                let padX: Float = dxProbe * 0.05
+                let padZ: Float = dzProbe * 0.05
+                frozenMinX = minX - padX; frozenMaxX = maxX + padX
+                frozenMinZ = minZ - padZ; frozenMaxZ = maxZ + padZ
                 boundsFrozen = true
                 #if DEBUG
-                print("Motion: bounds frozen dx=\(dxProbe) dz=\(dzProbe)")
+                print("Motion: bounds frozen dx=\(dxProbe) dz=\(dzProbe) with 5% pad")
                 #endif
             }
         }
@@ -338,8 +381,11 @@ final class TelemetryReceiver: ObservableObject {
         var points = [CGPoint]()
         points.reserveCapacity(carCount)
         for idx in 0..<carCount {
-            let nx = (worldXs[idx] - useMinX) / dx
-            let nz = (worldZs[idx] - useMinZ) / dz
+            var nx = (worldXs[idx] - useMinX) / dx
+            var nz = (worldZs[idx] - useMinZ) / dz
+            // Clamp to [0,1] to avoid off-screen mapping
+            nx = max(0, min(1, nx))
+            nz = max(0, min(1, nz))
             points.append(CGPoint(x: CGFloat(nx), y: CGFloat(nz)))
         }
 

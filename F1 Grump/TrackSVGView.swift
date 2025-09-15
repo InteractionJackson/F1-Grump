@@ -168,8 +168,9 @@ final class TrackSVGContainer: UIView {
         let path = UIBezierPath()
         let rOthers: CGFloat = 3
         let rPlayer: CGFloat = 5
-        // Use the same fitted rect as the SVG so dots sit on top correctly
-        let rect = (fittedRect.width > 0 && fittedRect.height > 0) ? fittedRect : bounds
+        // Use the same fitted rect as the SVG so dots sit on top correctly, with a small inset to avoid clipping
+        var rect = (fittedRect.width > 0 && fittedRect.height > 0) ? fittedRect : bounds
+        rect = rect.insetBy(dx: rect.width * 0.02, dy: rect.height * 0.02)
         // Resolve the best flip/swap mapping once we have enough data and a path
         if !mappingResolved, normalizedPoints.count >= 8, let hitPath = combinedPath {
             mapping = bestMapping(for: normalizedPoints, in: rect, hitPath: hitPath)
