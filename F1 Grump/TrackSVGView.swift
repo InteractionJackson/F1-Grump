@@ -25,8 +25,8 @@ struct TrackSVGView: UIViewRepresentable {
 
 final class TrackSVGContainer: UIView {
     private var baseLayer = CALayer()
-    private var layers: [CAShapeLayer] = []
     private let dotsLayer = CAShapeLayer()
+    private let outlineLayer = CAShapeLayer()
     private var normalizedPoints: [CGPoint] = []
     private var playerIdx: Int = 0
     private var currentName = ""
@@ -43,9 +43,16 @@ final class TrackSVGContainer: UIView {
         super.init(frame: frame)
         isOpaque = false
         layer.addSublayer(baseLayer)
-        dotsLayer.fillColor = UIColor.black.cgColor
-        dotsLayer.strokeColor = UIColor.clear.cgColor
-        dotsLayer.lineWidth = 0
+        outlineLayer.strokeColor = UIColor(white: 1, alpha: 0.25).cgColor
+        outlineLayer.fillColor = UIColor.clear.cgColor
+        outlineLayer.lineWidth = 1
+        outlineLayer.lineJoin = .round
+        outlineLayer.lineCap = .round
+        outlineLayer.name = "polylineOutline"
+        baseLayer.addSublayer(outlineLayer)
+        dotsLayer.fillColor = UIColor.systemGreen.cgColor
+        dotsLayer.strokeColor = UIColor.black.withAlphaComponent(0.6).cgColor
+        dotsLayer.lineWidth = 1
         baseLayer.addSublayer(dotsLayer)
         contentMode = .redraw
     }
@@ -54,8 +61,7 @@ final class TrackSVGContainer: UIView {
     func loadSVG(named name: String) {
         guard name != currentName else { return }
         currentName = name
-        layers.forEach { $0.removeFromSuperlayer() }
-        layers.removeAll()
+        outlineLayer.path = nil
         combinedPath = nil
         mappingResolved = false
 
@@ -86,18 +92,10 @@ final class TrackSVGContainer: UIView {
             return
         }
 
-        // Merge into layers
-        for p in paths {
-            let shape = CAShapeLayer()
-            shape.path = p.cgPath
-            shape.fillColor = UIColor.white.cgColor
-            shape.strokeColor = UIColor.clear.cgColor
-            shape.lineWidth = 0
-            shape.lineJoin = .round
-            shape.lineCap = .round
-            baseLayer.addSublayer(shape)
-            layers.append(shape)
-        }
+        // Do not add visible SVG layers; we only use the combined path to set fittedRect and mapping
+        let combined = CGMutablePath()
+        for p in paths { combined.addPath(p.cgPath) }
+        combinedPath = combined.copy()
         setNeedsLayout()
     }
 
@@ -142,24 +140,15 @@ final class TrackSVGContainer: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         baseLayer.frame = bounds
-        // Compute union
-        let union = layers.reduce(CGRect.null) { r, l in
-            r.union(l.path?.boundingBoxOfPath ?? .null)
-        }
-        guard union.width > 0, union.height > 0 else { return }
-        let t = aspectFitTransform(for: union, in: bounds)
-        for l in layers { l.setAffineTransform(t) }
-        // Cache the fitted drawing rect (where the track was drawn)
-        fittedRect = union.applying(t)
-        // Build a combined path in view coordinates for hit-testing
-        let combined = CGMutablePath()
-        for l in layers {
-            if let p = l.path {
-                var lt = l.affineTransform()
-                if let tp = p.copy(using: &lt) { combined.addPath(tp) }
+        // Compute fitted rect and outline path if we have a combined SVG path
+        if let cp = combinedPath {
+            let svgBounds = cp.boundingBoxOfPath
+            let t = aspectFitTransform(for: svgBounds, in: bounds)
+            fittedRect = svgBounds.applying(t)
+            if let tp = cp.copy(using: UnsafePointer([t])) {
+                outlineLayer.path = tp
             }
         }
-        combinedPath = combined.copy()
         renderDots()
     }
 
@@ -168,11 +157,10 @@ final class TrackSVGContainer: UIView {
         let path = UIBezierPath()
         let rOthers: CGFloat = 3
         let rPlayer: CGFloat = 5
-        // Use the same fitted rect as the SVG so dots sit on top correctly, with a small inset to avoid clipping
-        var rect = (fittedRect.width > 0 && fittedRect.height > 0) ? fittedRect : bounds
-        rect = rect.insetBy(dx: rect.width * 0.02, dy: rect.height * 0.02)
-        // Resolve the best flip/swap mapping once we have enough data and a path
-        if !mappingResolved, normalizedPoints.count >= 8, let hitPath = combinedPath {
+        // Use the exact fitted rect that the SVG occupies
+        let rect = (fittedRect.width > 0 && fittedRect.height > 0) ? fittedRect : bounds
+        // Resolve the best flip/swap mapping once we have enough data and an outline path
+        if !mappingResolved, normalizedPoints.count >= 8, let hitPath = outlineLayer.path {
             mapping = bestMapping(for: normalizedPoints, in: rect, hitPath: hitPath)
             mappingResolved = true
             #if DEBUG

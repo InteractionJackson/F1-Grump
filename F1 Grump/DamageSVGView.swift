@@ -84,6 +84,20 @@ final class DamageSVGContainer: UIView {
     }
 
     func applyDamage(_ damage: [String: CGFloat]) {
+        // If there is effectively no damage anywhere for a sustained period, render a stable green tint.
+        // We avoid per-frame toggling by keeping a sticky zero state until damage clears >2%.
+        let maxDamage = damage.values.max() ?? 0
+        struct Sticky { static var noDamageFrames = 0 }
+        if maxDamage < 0.02 { Sticky.noDamageFrames += 1 } else { Sticky.noDamageFrames = 0 }
+        if Sticky.noDamageFrames >= 5 {
+            for layer in layersById.values {
+                let ok = UIColor(red: 0.15, green: 0.85, blue: 0.27, alpha: 1) // #27D94D-ish
+                layer.fillColor = ok.withAlphaComponent(0.14).cgColor
+                layer.strokeColor = ok.cgColor
+                layer.lineWidth = 0.83
+            }
+            return
+        }
         // If the SVG has distinct ids, shade per-part. Otherwise, fall back to an overall tint.
         if layersById.count <= 1 {
             // Overall severity: prioritize wing damage if present, else tyres
@@ -94,9 +108,9 @@ final class DamageSVGContainer: UIView {
             let pct = max(wingMax, tyreMax)
             let color = damageColor(CGFloat(pct))
             for layer in layersById.values {
-                layer.fillColor = color.withAlphaComponent(pct > 0 ? 0.35 : 0.08).cgColor
+                layer.fillColor = color.withAlphaComponent(0.28).cgColor
                 layer.strokeColor = color.cgColor
-                layer.lineWidth = pct > 0.01 ? 2.5 : 2.0
+                layer.lineWidth = 2.0
             }
             #if DEBUG
             if let onlyId = layersById.keys.first { print("DamageSVG: single id '" + onlyId + "' — using overall damage =", pct) }

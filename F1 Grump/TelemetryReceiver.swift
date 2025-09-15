@@ -54,6 +54,7 @@ final class TelemetryReceiver: ObservableObject {
     private var frozenMinZ: Float = 0
     private var frozenMaxZ: Float = 1
     private var motionFramesObserved: Int = 0
+    private let minSpreadBeforePublish: Float = 5.0   // ignore degenerate grid extents
     @Published var carPoints: [CGPoint] = Array(repeating: .zero, count: 22) // all cars, normalized 0..1
     @Published var playerCarIndex: Int = 0
     @Published var trackName: String = ""    // e.g., "Silverstone"
@@ -63,6 +64,7 @@ final class TelemetryReceiver: ObservableObject {
     private var listener: NWListener?
     private let q = DispatchQueue(label: "f1.telemetry")
     private var damageFilter: [String: CGFloat] = [:]
+    private var ersEMA: Double = 0
 
     // MARK: - Start/Stop
     func start(port: UInt16 = 20777) {
@@ -219,16 +221,19 @@ final class TelemetryReceiver: ObservableObject {
             if f >= 0, f <= 100.0 { return Int(roundf(f)) }
             return 0
         }
-        var wFL = Int(data.readU8(offset: carBase + 16))
-        var wFR = Int(data.readU8(offset: carBase + 17))
-        var wRL = Int(data.readU8(offset: carBase + 18))
-        var wRR = Int(data.readU8(offset: carBase + 19))
+        // Spec order is usually RL, RR, FL, FR at 16..19; remap to FL, FR, RL, RR
+        var wFL = Int(data.readU8(offset: carBase + 18))
+        var wFR = Int(data.readU8(offset: carBase + 19))
+        var wRL = Int(data.readU8(offset: carBase + 16))
+        var wRR = Int(data.readU8(offset: carBase + 17))
         // Fallback: try floats if bytes look wrong
         if (wFL|wFR|wRL|wRR) == 0 {
-            wFL = fToPctInt(data.readF32LE(offset: carBase + 0))
-            wFR = fToPctInt(data.readF32LE(offset: carBase + 4))
-            wRL = fToPctInt(data.readF32LE(offset: carBase + 8))
-            wRR = fToPctInt(data.readF32LE(offset: carBase + 12))
+            // If float fallback is used, assume float order is also RL, RR, FL, FR
+            let fRL = fToPctInt(data.readF32LE(offset: carBase + 0))
+            let fRR = fToPctInt(data.readF32LE(offset: carBase + 4))
+            let fFL = fToPctInt(data.readF32LE(offset: carBase + 8))
+            let fFR = fToPctInt(data.readF32LE(offset: carBase + 12))
+            wFL = fFL; wFR = fFR; wRL = fRL; wRR = fRR
         }
 
         // Optional: wings and other aero damage (try common offsets)
@@ -311,24 +316,38 @@ final class TelemetryReceiver: ObservableObject {
 
     /// ERS and other per-car status
     private func parseCarStatus(_ data: Data, headerSize: Int, playerIndex: Int) {
-        // Heuristic per-car block size similar to other parsers in this app
-        let perCarSize = 60
-        let carBase = headerSize + (playerIndex * perCarSize)
-        guard carBase + perCarSize <= data.count else { return }
+        // Scan a generous window after the player's block start to find ERS store energy.
+        // Different games/layouts move this field; we search for a plausible Joules or percent field.
+        let carCount = 22
+        let bytesRemaining = max(0, data.count - headerSize)
+        let perCarGuess = max(60, bytesRemaining / max(1, carCount))
+        let carBase = headerSize + (playerIndex * perCarGuess)
+        guard carBase < data.count else { return }
 
-        // ERS store energy in Joules (spec uses float). Offsets vary by build; try common positions.
-        // Prefer a stable UI even if value is zero on some builds.
-        let storeA: Float = data.readF32LE(offset: carBase + 40)
-        let storeB: Float = data.readF32LE(offset: carBase + 44)
-        let storeC: Float = data.readF32LE(offset: carBase + 32)
-        let storeJ = [storeA, storeB, storeC].first(where: { $0 > 0 }) ?? 0
-
-        // Normalize using 4 MJ capacity; clamp to 0…1
-        let pct = max(0, min(1, Double(storeJ) / 4_000_000.0))
-
-        DispatchQueue.main.async {
-            self.ersPercent = pct
+        let window = min(256, data.count - carBase)
+        var bestPctJ: Double = -1
+        var bestPctP: Double = -1
+        var off = 0
+        while off + 4 <= window {
+            let v = data.readF32LE(offset: carBase + off)
+            if v.isFinite && v >= 0 {
+                if v > 1000 && v <= 5_000_000 { // Joules
+                    let cand = Double(v) / 4_000_000.0
+                    if cand >= 0 && cand <= 1 { bestPctJ = max(bestPctJ, cand) }
+                } else if v <= 100 { // Percent
+                    let cand = Double(v) / 100.0
+                    if cand >= 0 && cand <= 1 { bestPctP = max(bestPctP, cand) }
+                }
+            }
+            off += 4
         }
+        var pct = max(bestPctJ, bestPctP)
+        if pct < 0 { pct = ersEMA } // keep last value if nothing found
+        // Smooth to avoid jumps; bias toward decreasing slowly to reflect consumption
+        let alpha = 0.25
+        ersEMA = ersEMA * (1 - alpha) + pct * alpha
+        let clamped = max(0, min(1, ersEMA))
+        DispatchQueue.main.async { self.ersPercent = clamped }
     }
 
     private func parseMotion(_ data: Data, headerSize: Int, playerIndex: Int) {
@@ -358,19 +377,28 @@ final class TelemetryReceiver: ObservableObject {
             let dxProbe = maxX - minX
             let dzProbe = maxZ - minZ
             if motionFramesObserved >= 60 && dxProbe > 1e-3 && dzProbe > 1e-3 { // ~3s at 20Hz
-                // Add a small margin so later points stay within [0,1]
-                let padX: Float = dxProbe * 0.05
-                let padZ: Float = dzProbe * 0.05
+                // Add margin so later points stay within [0,1]
+                let padX: Float = dxProbe * 0.12
+                let padZ: Float = dzProbe * 0.12
                 frozenMinX = minX - padX; frozenMaxX = maxX + padX
                 frozenMinZ = minZ - padZ; frozenMaxZ = maxZ + padZ
                 boundsFrozen = true
                 #if DEBUG
-                print("Motion: bounds frozen dx=\(dxProbe) dz=\(dzProbe) with 5% pad")
+                print("Motion: bounds frozen dx=\(dxProbe) dz=\(dzProbe) with 12% pad")
                 #endif
             }
         }
 
-        // 2) Normalize into 0..1 square; preserve aspect ratio by scaling to the longer axis
+        // 2) Normalize into 0..1. If spread is too small (grid), hold last dots to avoid full-tile blow-up
+        if !boundsFrozen {
+            let dxProbe = maxX - minX
+            let dzProbe = maxZ - minZ
+            if dxProbe < minSpreadBeforePublish || dzProbe < minSpreadBeforePublish {
+                return // keep previous carPoints until we have meaningful bounds
+            }
+        }
+
+        // Normalize using current or frozen bounds
         let useMinX = boundsFrozen ? frozenMinX : minX
         let useMaxX = boundsFrozen ? frozenMaxX : maxX
         let useMinZ = boundsFrozen ? frozenMinZ : minZ
@@ -462,7 +490,7 @@ extension TelemetryReceiver {
             var s2       = Int(data.readLE(offset: base + 10) as UInt16)
             // Validate ranges; if out of range, try seconds floats and convert
             if current <= 0 || current > 600_000 {
-                let lastF: Float = data.readF32LE(offset: base + 0)
+                _ = data.readF32LE(offset: base + 0) // lastF (unused)
                 let currF: Float = data.readF32LE(offset: base + 4)
                 current = Int(currF * 1000)
                 // Sector positions may shift in some builds; try alternative (+12/+14)
@@ -505,6 +533,7 @@ extension TelemetryReceiver {
             }
             s1 = s1u; s2 = s2u
         }
+        // s3 live split: use current - s1 - s2, but if current is 0 early in first lap, prefer last known running time
         let s3Guess  = max(0, current - s1 - s2)
         let lapNum   = Int(data.readU8(offset: pBase + min(20, perCar - 1)))
 
