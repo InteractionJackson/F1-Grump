@@ -318,9 +318,10 @@ extension TelemetryReceiver {
 
     /// Live per-car lap data (current/last + running sector times)
     func parseLapData(_ data: Data, headerSize: Int, playerIndex: Int) {
-        // Per-car block size for LapData (tweak if your build differs)
-        let perCar = 60
+        // Derive per-car block size for this packet to avoid hardcoding
         let carCount = 22
+        let bytesRemaining = max(0, data.count - headerSize)
+        let perCar = max(16, bytesRemaining / carCount)
 
         var globalBest = [Int.max, Int.max, Int.max]
 
@@ -328,9 +329,26 @@ extension TelemetryReceiver {
         for idx in 0..<carCount {
             let base = headerSize + idx * perCar
             guard base + 24 <= data.count else { continue }
-            let current  = Int(data.readLE(offset: base + 4)  as UInt32)
-            let s1       = Int(data.readLE(offset: base + 8)  as UInt16)
-            let s2       = Int(data.readLE(offset: base + 10) as UInt16)
+            // Try MS format first
+            var current  = Int(data.readLE(offset: base + 4)  as UInt32)
+            var s1       = Int(data.readLE(offset: base + 8)  as UInt16)
+            var s2       = Int(data.readLE(offset: base + 10) as UInt16)
+            // Validate ranges; if out of range, try seconds floats and convert
+            if current <= 0 || current > 600_000 {
+                let lastF: Float = data.readF32LE(offset: base + 0)
+                let currF: Float = data.readF32LE(offset: base + 4)
+                current = Int(currF * 1000)
+                // Sector positions may shift in some builds; try alternative (+12/+14)
+                var s1u: Int = Int(data.readLE(offset: base + 8)  as UInt16)
+                var s2u: Int = Int(data.readLE(offset: base + 10) as UInt16)
+                if s1u <= 0 || s1u > 120_000 || s2u <= 0 || s2u > 120_000 {
+                    s1u = Int(data.readLE(offset: base + 12) as UInt16)
+                    s2u = Int(data.readLE(offset: base + 14) as UInt16)
+                }
+                s1 = s1u; s2 = s2u
+                // If everything still looks bogus, skip this car
+                if current <= 0 || current > 600_000 { continue }
+            }
             let s3Guess  = max(0, current - s1 - s2)
             if s1 > 0 && s1 < globalBest[0] { globalBest[0] = s1 }
             if s2 > 0 && s2 < globalBest[1] { globalBest[1] = s2 }
@@ -340,13 +358,28 @@ extension TelemetryReceiver {
 
         // Now read the player's values
         let pBase = headerSize + playerIndex * perCar
-        guard pBase + 24 <= data.count else { return }
-        let lastLap  = Int(data.readLE(offset: pBase + 0)  as UInt32)
-        let current  = Int(data.readLE(offset: pBase + 4)  as UInt32)
-        let s1       = Int(data.readLE(offset: pBase + 8)  as UInt16)
-        let s2       = Int(data.readLE(offset: pBase + 10) as UInt16)
+        guard pBase + 16 <= data.count else { return }
+        // Prefer MS layout
+        var lastLap  = Int(data.readLE(offset: pBase + 0)  as UInt32)
+        var current  = Int(data.readLE(offset: pBase + 4)  as UInt32)
+        var s1       = Int(data.readLE(offset: pBase + 8)  as UInt16)
+        var s2       = Int(data.readLE(offset: pBase + 10) as UInt16)
+        // Fallback to seconds floats if MS looks invalid
+        if (lastLap <= 0 || lastLap > 600_000) || (current < 0 || current > 600_000) {
+            let lastF: Float = data.readF32LE(offset: pBase + 0)
+            let currF: Float = data.readF32LE(offset: pBase + 4)
+            lastLap = Int(max(0, lastF) * 1000)
+            current = Int(max(0, currF) * 1000)
+            var s1u: Int = Int(data.readLE(offset: pBase + 8)  as UInt16)
+            var s2u: Int = Int(data.readLE(offset: pBase + 10) as UInt16)
+            if s1u <= 0 || s1u > 120_000 || s2u <= 0 || s2u > 120_000 {
+                s1u = Int(data.readLE(offset: pBase + 12) as UInt16)
+                s2u = Int(data.readLE(offset: pBase + 14) as UInt16)
+            }
+            s1 = s1u; s2 = s2u
+        }
         let s3Guess  = max(0, current - s1 - s2)
-        let lapNum   = Int(data.readU8(offset: pBase + 20))
+        let lapNum   = Int(data.readU8(offset: pBase + min(20, perCar - 1)))
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
