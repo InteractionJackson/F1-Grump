@@ -31,6 +31,13 @@ final class TrackSVGContainer: UIView {
     private var playerIdx: Int = 0
     private var currentName = ""
     private var fittedRect: CGRect = .zero
+    private var combinedPath: CGPath?
+
+    private enum DotMapping: CaseIterable {
+        case xy, flipX, flipY, flipXY, swap, swapFlipX, swapFlipY, swapFlipXY
+    }
+    private var mapping: DotMapping = .xy
+    private var mappingResolved = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -49,6 +56,8 @@ final class TrackSVGContainer: UIView {
         currentName = name
         layers.forEach { $0.removeFromSuperlayer() }
         layers.removeAll()
+        combinedPath = nil
+        mappingResolved = false
 
         // Try exact match first
         var url = Bundle.main.url(forResource: name, withExtension: "svg", subdirectory: "assets/track outlines")
@@ -142,6 +151,15 @@ final class TrackSVGContainer: UIView {
         for l in layers { l.setAffineTransform(t) }
         // Cache the fitted drawing rect (where the track was drawn)
         fittedRect = union.applying(t)
+        // Build a combined path in view coordinates for hit-testing
+        let combined = CGMutablePath()
+        for l in layers {
+            if let p = l.path {
+                var lt = l.affineTransform()
+                if let tp = p.copy(using: &lt) { combined.addPath(tp) }
+            }
+        }
+        combinedPath = combined.copy()
         renderDots()
     }
 
@@ -152,15 +170,65 @@ final class TrackSVGContainer: UIView {
         let rPlayer: CGFloat = 5
         // Use the same fitted rect as the SVG so dots sit on top correctly
         let rect = (fittedRect.width > 0 && fittedRect.height > 0) ? fittedRect : bounds
+        // Resolve the best flip/swap mapping once we have enough data and a path
+        if !mappingResolved, normalizedPoints.count >= 8, let hitPath = combinedPath {
+            mapping = bestMapping(for: normalizedPoints, in: rect, hitPath: hitPath)
+            mappingResolved = true
+            #if DEBUG
+            print("TrackSVGView: resolved dot mapping =", mapping)
+            #endif
+        }
         for (i, p) in normalizedPoints.enumerated() {
-            let x = rect.minX + CGFloat(p.x) * rect.width
-            let y = rect.minY + (1 - CGFloat(p.y)) * rect.height
+            let mapped = mapPoint(p, in: rect, mapping: mapping)
+            let x = mapped.x
+            let y = mapped.y
             let r = (i == playerIdx) ? rPlayer : rOthers
             let rect = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
             path.append(UIBezierPath(ovalIn: rect))
         }
         dotsLayer.path = path.cgPath
         dotsLayer.opacity = normalizedPoints.isEmpty ? 0 : 1
+    }
+
+    private func mapPoint(_ p: CGPoint, in rect: CGRect, mapping: DotMapping) -> CGPoint {
+        // base axes
+        let x = CGFloat(p.x)
+        let y = CGFloat(p.y)
+        var u: CGFloat = 0
+        var v: CGFloat = 0
+        switch mapping {
+        case .xy:          (u, v) = (x, 1 - y)
+        case .flipX:       (u, v) = (1 - x, 1 - y)
+        case .flipY:       (u, v) = (x, y)
+        case .flipXY:      (u, v) = (1 - x, y)
+        case .swap:        (u, v) = (y, 1 - x)
+        case .swapFlipX:   (u, v) = (1 - y, 1 - x)
+        case .swapFlipY:   (u, v) = (y, x)
+        case .swapFlipXY:  (u, v) = (1 - y, x)
+        }
+        return CGPoint(x: rect.minX + u * rect.width,
+                       y: rect.minY + v * rect.height)
+    }
+
+    private func bestMapping(for pts: [CGPoint], in rect: CGRect, hitPath: CGPath) -> DotMapping {
+        // Try all mappings and pick the one that places the most points inside the track fill
+        var best = DotMapping.xy
+        var bestScore = -1
+        let candidates = DotMapping.allCases
+        // Use a sample of up to 100 points
+        let sample = pts.prefix(100)
+        for m in candidates {
+            var inside = 0
+            for p in sample {
+                let q = mapPoint(p, in: rect, mapping: m)
+                if hitPath.contains(q, using: .winding, transform: .identity) { inside += 1 }
+            }
+            if inside > bestScore {
+                bestScore = inside
+                best = m
+            }
+        }
+        return best
     }
 }
 
