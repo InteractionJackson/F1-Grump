@@ -1245,8 +1245,8 @@ struct TelemetryRings: View {
     private let ersWidth: CGFloat = 18
     private let ringGap: CGFloat  = 12
 
-    private let t1: CGFloat = 0.70
-    private let t2: CGFloat = 0.90
+    private let t1: CGFloat = 0.60
+    private let t2: CGFloat = 0.80
     private let t3: CGFloat = 1.00
 
     var body: some View {
@@ -1254,24 +1254,32 @@ struct TelemetryRings: View {
             let minSide = min(geo.size.width, geo.size.height)
             let outerR  = minSide / 2
             let ersR    = outerR - rpmWidth - ringGap
+            // Desired physical gap between RPM segments in points
+            let gapPx: CGFloat = 2
+            // Convert to fraction of the total sweep
+            let gapDeg = (gapPx / outerR) * 180 / .pi
+            let gapFrac = gapDeg / sweep
+            let halfGap = gapFrac / 2
 
             ZStack {
                 // Track ring (subtle background under RPM)
                 Arc(start: startAngle, end: endAngle)
-                    .stroke(Color(.sRGB, red: 0.20, green: 0.22, blue: 0.16, opacity: 0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .round))
+                    .stroke(Color(hex: "#BCEBFF").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .round))
                     .frame(width: outerR*2, height: outerR*2)
 
                 // Inner ERS track ring so two arcs are visible even at 0%
                 Arc(start: startAngle, end: endAngle)
-                    .stroke(Color(.sRGB, red: 0.20, green: 0.22, blue: 0.16, opacity: 0.2), style: StrokeStyle(lineWidth: ersWidth, lineCap: .round))
+                    .stroke(Color(hex: "#EF9D00").opacity(0.2), style: StrokeStyle(lineWidth: ersWidth, lineCap: .round))
                     .frame(width: ersR*2, height: ersR*2)
 
-                // RPM segments
-                rpmSegment(start: 0.0, end: t1, value: rpm, radius: outerR, capRadius: 4)
-                    .foregroundStyle(AngularGradient(colors: [Color(hex: "#5ED0FF"), Color(hex: "#1AA0FF")], center: .center, startAngle: startAngle, endAngle: endAngle))
-                rpmSegment(start: t1, end: t2, value: rpm, radius: outerR, capRadius: 4)
+                // RPM segments with 2pt gaps between them
+                // First segment: linear gradient #0098EF → #BCEBFF @ 40°
+                let gp = gradientPoints(degrees: 40)
+                rpmSegment(start: 0.0, end: max(0, t1 - halfGap), value: rpm, radius: outerR, capRadius: 4, drawStartDot: true, drawEndDot: false)
+                    .foregroundStyle(LinearGradient(colors: [Color(hex: "#0098EF"), Color(hex: "#BCEBFF")], startPoint: gp.start, endPoint: gp.end))
+                rpmSegment(start: min(1, t1 + halfGap), end: max(0, t2 - halfGap), value: rpm, radius: outerR, capRadius: 4, drawStartDot: false, drawEndDot: false)
                     .foregroundColor(Color(hex: "#F6C737"))
-                rpmSegment(start: t2, end: t3, value: rpm, radius: outerR, capRadius: 4)
+                rpmSegment(start: min(1, t2 + halfGap), end: t3, value: rpm, radius: outerR, capRadius: 4, drawStartDot: false, drawEndDot: true)
                     .foregroundColor(Color(hex: "#FF3B58"))
 
                 // ERS ring
@@ -1294,14 +1302,14 @@ struct TelemetryRings: View {
     }
 
     @ViewBuilder
-    private func rpmSegment(start segStart: CGFloat, end segEnd: CGFloat, value: CGFloat, radius: CGFloat, capRadius: CGFloat) -> some View {
+    private func rpmSegment(start segStart: CGFloat, end segEnd: CGFloat, value: CGFloat, radius: CGFloat, capRadius: CGFloat, drawStartDot: Bool = true, drawEndDot: Bool = true) -> some View {
         let filledEnd = min(max(0, value), segEnd)
         if filledEnd > segStart {
             ZStack {
                 Arc(start: angle(for: segStart), end: angle(for: filledEnd))
                     .stroke(style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
                     .frame(width: radius*2, height: radius*2)
-                CapDots(radius: radius, start: angle(for: segStart), end: angle(for: filledEnd), diameter: capRadius * 2)
+                CapDots(radius: radius, start: angle(for: segStart), end: angle(for: filledEnd), diameter: capRadius * 2, drawStart: drawStartDot, drawEnd: drawEndDot)
                     .frame(width: radius*2, height: radius*2)
             }
         }
@@ -1328,12 +1336,28 @@ struct Arc: Shape {
     }
 }
 
+private func gradientPoints(degrees: Double) -> (start: UnitPoint, end: UnitPoint) {
+    let norm = fmod((degrees < 0 ? degrees + 360 : degrees), 360)
+    switch norm {
+    case 22.5..<67.5: return (.topLeading, .bottomTrailing)
+    case 67.5..<112.5: return (.top, .bottom)
+    case 112.5..<157.5: return (.topTrailing, .bottomLeading)
+    case 157.5..<202.5: return (.trailing, .leading)
+    case 202.5..<247.5: return (.bottomTrailing, .topLeading)
+    case 247.5..<292.5: return (.bottom, .top)
+    case 292.5..<337.5: return (.bottomLeading, .topTrailing)
+    default: return (.leading, .trailing)
+    }
+}
+
 // Hex color helper
 private struct CapDots: View {
     let radius: CGFloat
     let start: Angle
     let end: Angle
     let diameter: CGFloat
+    var drawStart: Bool = true
+    var drawEnd: Bool = true
 
     private func point(on radius: CGFloat, angle: Angle, in rect: CGRect) -> CGPoint {
         let rads = CGFloat(angle.radians)
@@ -1348,8 +1372,12 @@ private struct CapDots: View {
             let p0 = point(on: min(rect.width, rect.height) / 2, angle: start, in: rect)
             let p1 = point(on: min(rect.width, rect.height) / 2, angle: end, in: rect)
             ZStack {
-                Circle().frame(width: diameter, height: diameter).position(p0)
-                Circle().frame(width: diameter, height: diameter).position(p1)
+                if drawStart {
+                    Circle().frame(width: diameter, height: diameter).position(p0)
+                }
+                if drawEnd {
+                    Circle().frame(width: diameter, height: diameter).position(p1)
+                }
             }
         }
     }
