@@ -5,13 +5,29 @@ import SwiftUI
 struct Card<Content: View>: View {
     let title: String
     let height: CGFloat
+    let iconName: String?
     @ViewBuilder var content: () -> Content
+
+    init(title: String, height: CGFloat, iconName: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.height = height
+        self.iconName = iconName
+        self.content = content
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.secondaryEmphasised)
-                .foregroundColor(.textPrimary)
+            HStack(spacing: 8) {
+                if let name = iconName, let ui = TileIconProvider.load(name: name) {
+                    Image(uiImage: ui)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                }
+                Text(title)
+                    .font(.secondaryEmphasised)
+                    .foregroundColor(.textPrimary)
+            }
             content()
                 .foregroundColor(.textPrimary)
         }
@@ -170,13 +186,13 @@ struct ContentView: View {
             let speedH = hAvailable * 0.40
             VStack(alignment: .leading, spacing: spacing) {
                 if showCarConditionTile {
-                    Card(title: "Car condition & damage", height: condH) {
+                    Card(title: "Car condition & damage", height: condH, iconName: "car_condition") {
                         CarConditionGrid(temps: rx.tyreInnerTemps, wear: rx.tyreWear, brakes: rx.brakeTemps, damage: rx.overlayDamage)
                     }
                 }
 
                 if showSpeedTile {
-                    Card(title: "Speed, RPM, DRS & Gear", height: speedH) {
+                    Card(title: "Speed, RPM, DRS & Gear", height: speedH, iconName: "speed") {
                         VStack(alignment: .leading, spacing: 0) {
                             NewSpeedTile(rx: rx, rpmRedline: 12000)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -204,14 +220,14 @@ struct ContentView: View {
             let hBottom = hAvailable * 0.60
             VStack(alignment: .leading, spacing: spacing) {
                 if showSplitsTile {
-                    Card(title: "Splits", height: hTop) {
+                    Card(title: "Splits", height: hTop, iconName: "splits") {
                         LapSplitsView(rx: rx)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
                 }
 
                 if showTrackTile {
-                    Card(title: "Circuit map", height: hBottom) {
+                    Card(title: "Circuit map", height: hBottom, iconName: "track-position") {
                         GeometryReader { g in
                             let side = min(g.size.width, g.size.height) * 0.95
                             ZStack {
@@ -697,7 +713,7 @@ struct SpeedRpmTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Top row: Speed box, Gear box, DRS toggle
-            HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .center, spacing: 12) {
                 ZStack {
                     // Inner tile style: bg 3% white, 1pt 8% white border, 8pt radius
                     RoundedRectangle(cornerRadius: 8)
@@ -1076,6 +1092,28 @@ enum AppLogoProvider {
 // SVG fallback removed; using PNG or asset image instead
 
 
+// MARK: - Tile Icon Provider
+enum TileIconProvider {
+    static func load(name: String) -> UIImage? {
+        // Try asset catalog first
+        if let img = UIImage(named: name) { return img }
+        // Then try bundle under assets/ subfolder (PNG)
+        if let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "assets"),
+           let data = try? Data(contentsOf: url),
+           let ui = UIImage(data: data) {
+            return ui
+        }
+        // Finally try at root of bundle as PNG
+        if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+           let data = try? Data(contentsOf: url),
+           let ui = UIImage(data: data) {
+            return ui
+        }
+        return nil
+    }
+}
+
+
 // MARK: - New Speed Tile with Dual Rings
 
 struct NewSpeedTile: View {
@@ -1096,8 +1134,8 @@ struct NewSpeedTile: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack(alignment: .center, spacing: 16) {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
                 // Left: Speed
                 VStack(spacing: 4) {
                     Text(mphText)
@@ -1116,7 +1154,8 @@ struct NewSpeedTile: View {
                     rpm: CGFloat(max(0, min(1, rx.rpm / max(1, rpmRedline)))) ,
                     ers: CGFloat(max(0, min(1, rx.ersPercent)))
                 )
-                .frame(maxWidth: .infinity, minHeight: 160, maxHeight: 200)
+                .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 180)
+                .padding(.bottom, -8)
 
                 // Right: Gear
                 VStack(spacing: 4) {
@@ -1132,27 +1171,44 @@ struct NewSpeedTile: View {
             }
 
             // Bottom bars + DRS pill
-            HStack(alignment: .center, spacing: 16) {
-                CapsuleBar(
-                    label: "Brake",
-                    track: Color(.sRGB, red: 0.25, green: 0.12, blue: 0.16, opacity: 0.6),
-                    fill: Color(.sRGB, red: 1.00, green: 0.30, blue: 0.40, opacity: 1.0),
-                    value: max(0, min(1, rx.brake)),
-                    showDot: true,
-                    reversed: true
-                )
-                .frame(maxWidth: .infinity, minHeight: 22, maxHeight: 22)
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.tileBG)
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.tileBorder, lineWidth: 1)
+                    CapsuleBar(
+                        label: "Brake",
+                        track: Color(.sRGB, red: 0.25, green: 0.12, blue: 0.16, opacity: 0.6),
+                        fill: Color(.sRGB, red: 1.00, green: 0.30, blue: 0.40, opacity: 1.0),
+                        value: max(0, min(1, rx.brake)),
+                        showDot: false,
+                        reversed: true,
+                        labelAlignment: .trailing
+                    )
+                    .padding(8)
+                }
+                .frame(maxWidth: .infinity, maxHeight: 48)
 
                 DRSChip()
+                    .frame(height: 48)
 
-                CapsuleBar(
-                    label: "Throttle",
-                    track: Color(.sRGB, red: 0.18, green: 0.18, blue: 0.18, opacity: 0.7),
-                    fill: Color(.sRGB, red: 0.72, green: 1.00, blue: 0.30, opacity: 1.0),
-                    value: Double(max(0, min(1, rx.throttle))),
-                    showDot: false
-                )
-                .frame(maxWidth: .infinity, minHeight: 22, maxHeight: 22)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.tileBG)
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.tileBorder, lineWidth: 1)
+                    CapsuleBar(
+                        label: "Throttle",
+                        track: Color(.sRGB, red: 0.18, green: 0.18, blue: 0.18, opacity: 0.7),
+                        fill: Color(.sRGB, red: 0.72, green: 1.00, blue: 0.30, opacity: 1.0),
+                        value: Double(max(0, min(1, rx.throttle))),
+                        showDot: false,
+                        labelAlignment: .leading
+                    )
+                    .padding(8)
+                }
+                .frame(maxWidth: .infinity, maxHeight: 48)
             }
         }
     }
@@ -1164,7 +1220,7 @@ private struct DRSChip: View {
             .font(.gaugeLabel)
             .foregroundColor(.textPrimary)
             .padding(.horizontal, 16)
-            .padding(.vertical, 6)
+            .padding(.vertical, 12)
             .background(Color.white.opacity(0.06), in: Capsule())
             .overlay(
                 Capsule().stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
@@ -1179,6 +1235,7 @@ private struct CapsuleBar: View {
     let value: Double   // 0..1
     let showDot: Bool
     var reversed: Bool = false
+    var labelAlignment: Alignment = .center
 
     var body: some View {
         VStack(spacing: 6) {
@@ -1188,21 +1245,17 @@ private struct CapsuleBar: View {
                 GeometryReader { geo in
                     let w = max(0, min(1, value)) * geo.size.width
                     if reversed {
-                        // Fill from right to left
-                        ZStack(alignment: .leading) {
-                            Spacer(minLength: 0)
+                        // Fill from right to left: anchor the fill to the trailing edge
+                        ZStack(alignment: .trailing) {
                             Capsule()
                                 .fill(fill)
                                 .frame(width: max(6, w))
                                 .frame(maxWidth: .infinity, alignment: .trailing)
-                                .scaleEffect(x: -1, y: 1, anchor: .center)
-                                .scaleEffect(x: -1, y: 1, anchor: .center)
                             if showDot {
                                 Circle()
                                     .fill(fill)
                                     .frame(width: 10, height: 10)
-                                    .offset(x: 3)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .offset(x: -3)
                             }
                         }
                         .animation(.easeInOut(duration: 0.2), value: value)
@@ -1224,10 +1277,16 @@ private struct CapsuleBar: View {
             }
             .frame(height: 12)
 
-            Text(label)
-                .font(.gaugeLabel)
-                .foregroundColor(.labelEmphasised)
-                .kerning(0.9)
+            HStack {
+                if labelAlignment == .leading { Text(label) }
+                Spacer()
+                if labelAlignment == .center { Text(label) }
+                Spacer()
+                if labelAlignment == .trailing { Text(label) }
+            }
+            .font(.gaugeLabel)
+            .foregroundColor(.labelEmphasised)
+            .kerning(0.9)
         }
     }
 }
@@ -1257,14 +1316,33 @@ struct TelemetryRings: View {
             // Desired physical gap between RPM segments in points
             let gapPx: CGFloat = 2
             // Convert to fraction of the total sweep
-            let gapDeg = (gapPx / outerR) * 180 / .pi
+            let centerR = outerR - rpmWidth / 2
+            let gapDeg = (gapPx / max(1, centerR)) * 180 / .pi
             let gapFrac = gapDeg / sweep
             let halfGap = gapFrac / 2
 
             ZStack {
-                // Track ring (subtle background under RPM)
-                Arc(start: startAngle, end: endAngle)
-                    .stroke(Color(hex: "#BCEBFF").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .round))
+                // Track ring split into three colored background segments with the same gaps
+                let bg1Start: CGFloat = 0.0
+                let bg1End:   CGFloat = max(0, t1 - halfGap)
+                let bg2Start: CGFloat = min(1, t1 + halfGap)
+                let bg2End:   CGFloat = max(0, t2 - halfGap)
+                let bg3Start: CGFloat = min(1, t2 + halfGap)
+                let bg3End:   CGFloat = 1.0
+
+                // First background segment (#BCEBFF @ 20%)
+                Arc(start: angle(for: bg1Start), end: angle(for: bg1End))
+                    .stroke(Color(hex: "#BCEBFF").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
+                    .frame(width: outerR*2, height: outerR*2)
+
+                // Second background segment (#FF5878 @ 20%)
+                Arc(start: angle(for: bg2Start), end: angle(for: bg2End))
+                    .stroke(Color(hex: "#FF5878").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
+                    .frame(width: outerR*2, height: outerR*2)
+
+                // Third background segment (#E961FF @ 20%)
+                Arc(start: angle(for: bg3Start), end: angle(for: bg3End))
+                    .stroke(Color(hex: "#E961FF").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
                     .frame(width: outerR*2, height: outerR*2)
 
                 // Inner ERS track ring so two arcs are visible even at 0%
@@ -1275,11 +1353,11 @@ struct TelemetryRings: View {
                 // RPM segments with 2pt gaps between them
                 // First segment: linear gradient #0098EF → #BCEBFF @ 40°
                 let gp = gradientPoints(degrees: 40)
-                rpmSegment(start: 0.0, end: max(0, t1 - halfGap), value: rpm, radius: outerR, capRadius: 4, drawStartDot: true, drawEndDot: false)
+                rpmSegment(start: 0.0, end: max(0, t1 - halfGap), value: rpm, radius: outerR, capRadius: 4, drawStartDot: true, drawEndDot: true)
                     .foregroundStyle(LinearGradient(colors: [Color(hex: "#0098EF"), Color(hex: "#BCEBFF")], startPoint: gp.start, endPoint: gp.end))
                 rpmSegment(start: min(1, t1 + halfGap), end: max(0, t2 - halfGap), value: rpm, radius: outerR, capRadius: 4, drawStartDot: false, drawEndDot: false)
                     .foregroundColor(Color(hex: "#F6C737"))
-                rpmSegment(start: min(1, t2 + halfGap), end: t3, value: rpm, radius: outerR, capRadius: 4, drawStartDot: false, drawEndDot: true)
+                rpmSegment(start: min(1, t2 + halfGap), end: t3, value: rpm, radius: outerR, capRadius: 4, drawStartDot: true, drawEndDot: true)
                     .foregroundColor(Color(hex: "#FF3B58"))
 
                 // ERS ring

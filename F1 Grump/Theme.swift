@@ -71,7 +71,8 @@ struct TileModifier: ViewModifier {
     var height: CGFloat
     func body(content: Content) -> some View {
         content
-            .padding(16)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)

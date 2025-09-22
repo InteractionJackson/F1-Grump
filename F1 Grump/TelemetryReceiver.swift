@@ -275,7 +275,6 @@ final class TelemetryReceiver: ObservableObject {
 
         DispatchQueue.main.async {
             self.tyreWear = [wFL, wFR, wRL, wRR]
-            if self.packetCount % 60 == 0 { print("TyreWear: FL=\(wFL)% FR=\(wFR)% RL=\(wRL)% RR=\(wRR)%") }
             let dRaw: [String: CGFloat] = [
                 "fl_tyre": CGFloat(wFL) / 100.0,
                 "fr_tyre": CGFloat(wFR) / 100.0,
@@ -291,9 +290,7 @@ final class TelemetryReceiver: ObservableObject {
                 "drs": min(1, drsDmg)
             ]
             self.overlayDamage = self.stabilizeDamage(dRaw)
-            if wingL > 0 || wingR > 0 || rearWing > 0 || floorDmg > 0 || sidepodDmg > 0 || drsDmg > 0 {
-                print("CarDamage: wingL=\(String(format: "%.2f", wingL)) wingR=\(String(format: "%.2f", wingR)) rear=\(String(format: "%.2f", rearWing)) floor=\(String(format: "%.2f", floorDmg)) sidepod=\(String(format: "%.2f", sidepodDmg)) drs=\(String(format: "%.0f", drsDmg))")
-            }
+            // debug damage logs disabled to avoid UI stalls
         }
     }
 
@@ -406,9 +403,6 @@ final class TelemetryReceiver: ObservableObject {
                 frozenMinX = minX - padX; frozenMaxX = maxX + padX
                 frozenMinZ = minZ - padZ; frozenMaxZ = maxZ + padZ
                 boundsFrozen = true
-                #if DEBUG
-                print("Motion: bounds frozen dx=\(dxProbe) dz=\(dzProbe) with 12% pad")
-                #endif
             }
         }
 
@@ -589,9 +583,7 @@ extension TelemetryReceiver {
             if playerIndex >= 0 && playerIndex < self.carLastLapMSAll.count {
                 self.carLastLapMSAll[playerIndex] = lastLap
             }
-            if self.packetCount % 30 == 0 {
-                print("LapData: lap=\(lapNum) curr=\(current) last=\(lastLap) s=[\(s1),\(s2),\(s3Guess)] overall=[\(overall[0]),\(overall[1]),\(overall[2])]")
-            }
+            // periodic lap debug log disabled
         }
     }
 
@@ -668,9 +660,7 @@ extension TelemetryReceiver {
                 self.carCompletedSumMSAll[carIdx] = completedSum
                 self.carCompletedLapCountAll[carIdx] = numLaps
             }
-            if self.packetCount % 30 == 0 {
-                print("SessHistory: lastLap=\(lastLap) bestLap=\(bestLap) bestS=[\(bestSectors[0]),\(bestSectors[1]),\(bestSectors[2])]")
-            }
+            // periodic session history log disabled
         }
     }
 
@@ -854,15 +844,13 @@ extension TelemetryReceiver {
         frozenMinX = 0; frozenMaxX = 1
         frozenMinZ = 0; frozenMaxZ = 1
         motionFramesObserved = 0
-        #if DEBUG
-        print("Motion: bounds reset")
-        #endif
+        // Debug reset log disabled
     }
     
     private func receive(on connection: NWConnection) {
         connection.receiveMessage { [weak self] data, _, _, error in
             if let d = data {
-                print("UDP bytes:", d.count)    // <-- shows in Xcode console
+                // Avoid per-packet logging to prevent console I/O latency stalling UI updates
                 self?.handle(packet: d)
             } else if let error {
                 print("UDP error:", error)
