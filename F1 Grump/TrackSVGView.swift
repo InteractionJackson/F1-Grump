@@ -1,3 +1,4 @@
+#if false
 import SwiftUI
 import PocketSVG
 import UIKit
@@ -43,9 +44,9 @@ final class TrackSVGContainer: UIView {
         super.init(frame: frame)
         isOpaque = false
         layer.addSublayer(baseLayer)
-        outlineLayer.strokeColor = UIColor(white: 1, alpha: 0.25).cgColor
-        outlineLayer.fillColor = UIColor.clear.cgColor
-        outlineLayer.lineWidth = 1
+        outlineLayer.strokeColor = UIColor.clear.cgColor
+        outlineLayer.fillColor = UIColor(white: 1, alpha: 0.10).cgColor
+        outlineLayer.lineWidth = 0
         outlineLayer.lineJoin = .round
         outlineLayer.lineCap = .round
         outlineLayer.name = "polylineOutline"
@@ -70,20 +71,15 @@ final class TrackSVGContainer: UIView {
             transformResolved = true
         }
 
-        // Try exact match first
+        // Force-load from bundle subdirectory "assets/track outlines" only (no root fallback)
         var url = Bundle.main.url(forResource: name, withExtension: "svg", subdirectory: "assets/track outlines")
-              ?? Bundle.main.url(forResource: name, withExtension: "svg")
-        // If not found, try fuzzy match against all files in the folder
-        if url == nil {
-            url = bestMatchURL(for: name)
-        }
+        // If exact name not found, try fuzzy match within that subdirectory only
+        if url == nil { url = bestMatchURL(for: name) }
         guard let url else {
             #if DEBUG
             print("⚠️ TrackSVGView: SVG not found for '", name, "'")
             let sub = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: "assets/track outlines")?.map { $0.lastPathComponent } ?? []
-            let root = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: nil)?.map { $0.lastPathComponent } ?? []
-            print("Available track SVGs (assets/track outlines):", sub)
-            print("Available SVGs (bundle root):", root)
+            print("Available track SVGs (assets/track outlines only):", sub)
             #endif
             return
         }
@@ -133,10 +129,7 @@ final class TrackSVGContainer: UIView {
 
     private func bestMatchURL(for hint: String) -> URL? {
         let normHint = normalize(hint)
-        var urls = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: "assets/track outlines") ?? []
-        if urls.isEmpty {
-            urls = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: nil) ?? []
-        }
+        let urls = Bundle.main.urls(forResourcesWithExtension: "svg", subdirectory: "assets/track outlines") ?? []
         // Prefer names without the trailing " - White_*" part
         var best: (score: Int, url: URL)?
         for u in urls {
@@ -529,3 +522,4 @@ private func aspectFitTransform(for src: CGRect, in dst: CGRect) -> CGAffineTran
 }
 
 
+#endif

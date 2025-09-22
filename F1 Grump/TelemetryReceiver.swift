@@ -406,14 +406,8 @@ final class TelemetryReceiver: ObservableObject {
             }
         }
 
-        // 2) Normalize into 0..1. If spread is too small (grid), hold last dots to avoid full-tile blow-up
-        if !boundsFrozen {
-            let dxProbe = maxX - minX
-            let dzProbe = maxZ - minZ
-            if dxProbe < minSpreadBeforePublish || dzProbe < minSpreadBeforePublish {
-                return // keep previous carPoints until we have meaningful bounds
-            }
-        }
+        // 2) Normalize into 0..1. Even during warm-up, publish provisional dots
+        // using current dynamic bounds so the map is never empty.
 
         // Normalize using current or frozen bounds
         let useMinX = boundsFrozen ? frozenMinX : minX
@@ -818,7 +812,7 @@ extension TelemetryReceiver {
         // Map to fixed rows 1..N
         var items: [DriverOrderItem] = []
         items.reserveCapacity(maxDrivers)
-        let leaderCum = rows.first?.cumulative ?? 0
+        _ = rows.first?.cumulative
         for (i, r) in rows.enumerated() where i < maxDrivers {
             let p = i + 1
             let nameRaw = (r.carIdx < driverNames.count) ? driverNames[r.carIdx] : ""

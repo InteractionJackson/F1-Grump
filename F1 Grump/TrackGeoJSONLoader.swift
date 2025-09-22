@@ -9,19 +9,81 @@ import Foundation
 import CoreGraphics
 
 enum TrackAssets {
-    static let subdir = "Circuits" // the folder you added to the app bundle
+    // Accept multiple common locations/casing in the app bundle
+    static let candidateSubdirs: [String] = [
+        "Circuits",
+        "circuits",
+        "assets/Circuits",
+        "assets/circuits"
+    ]
 
     static func allNames() -> [String] {
-        let urls = Bundle.main.urls(forResourcesWithExtension: "geojson", subdirectory: subdir) ?? []
+        // Debug-friendly lookup: support multiple bundle subdirs and app Documents
+        var urls: [URL] = []
+        for sub in candidateSubdirs {
+            if let found = Bundle.main.urls(forResourcesWithExtension: "geojson", subdirectory: sub) {
+                urls.append(contentsOf: found)
+            }
+        }
+        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            if let fileURLs = try? FileManager.default.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil) {
+                urls.append(contentsOf: fileURLs.filter { $0.pathExtension.lowercased() == "geojson" })
+            }
+        }
         return urls
             .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
             .map { $0.deletingPathExtension().lastPathComponent }
     }
 }
 
+func bestGeoJSONName(for hint: String) -> String? {
+    let names = TrackAssets.allNames()
+    guard !names.isEmpty else { return nil }
+    let normHint = normalizeName(hint)
+    var best: (score: Int, name: String)? = nil
+    for n in names {
+        let score = fuzzyScore(a: normHint, b: normalizeName(n))
+        if score > (best?.score ?? -1) { best = (score, n) }
+    }
+    return best?.name
+}
+
+private func normalizeName(_ s: String) -> String {
+    let lowered = s.lowercased()
+    let aliases: [(String,String)] = [
+        ("bahrain", "sakhir"),
+        ("cota", "austin"),
+        ("interlagos", "brazil"),
+        ("yasmarina", "abudhabi"),
+        ("gp", "grandprix")
+    ]
+    var out = lowered.replacingOccurrences(of: " ", with: "")
+    for (a,b) in aliases {
+        if out.contains(a) { out = out.replacingOccurrences(of: a, with: b) }
+    }
+    let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789")
+    out.removeAll { !allowed.contains($0) }
+    return out
+}
+
+private func fuzzyScore(a: String, b: String) -> Int {
+    if a == b { return 1000 }
+    if a.contains(b) || b.contains(a) { return 800 }
+    return Set(a).intersection(Set(b)).count
+}
+
 func loadGeoJSONOutline(named name: String) -> [[CGPoint]] {
-    guard let url = Bundle.main.url(forResource: name, withExtension: "geojson", subdirectory: TrackAssets.subdir),
-          let data = try? Data(contentsOf: url),
+    // Try bundle subdirectories, then Documents (for local drops)
+    var url: URL? = nil
+    for sub in TrackAssets.candidateSubdirs {
+        if let u = Bundle.main.url(forResource: name, withExtension: "geojson", subdirectory: sub) { url = u; break }
+    }
+    if url == nil, let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+        let candidate = docs.appendingPathComponent("\(name).geojson")
+        if FileManager.default.fileExists(atPath: candidate.path) { url = candidate }
+    }
+    guard let u = url,
+          let data = try? Data(contentsOf: u),
           let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else { return [] }
 
@@ -90,36 +152,6 @@ func loadGeoJSONOutline(named name: String) -> [[CGPoint]] {
 }
 
 import SwiftUI
+import CoreGraphics
 
-struct TrackOutlineMap: View {
-    let segments: [[CGPoint]]     // normalized outline polylines (0..1)
-    let carPoints: [CGPoint]      // all cars, normalized (0..1)
-    let playerIndex: Int          // which one to highlight (0-based)
-
-    var body: some View {
-        GeometryReader { geo in
-            Canvas { ctx, size in
-                // 1) Outline
-                for seg in segments where seg.count > 1 {
-                    var path = Path()
-                    path.move(to: scale(seg[0], size))
-                    for p in seg.dropFirst() { path.addLine(to: scale(p, size)) }
-                    ctx.stroke(path, with: .color(.white), lineWidth: 16)
-                }
-
-                // 2) All car dots
-                for (i, p) in carPoints.enumerated() {
-                    let pt = scale(p, size)
-                    let r: CGFloat = (i == playerIndex) ? 5 : 3
-                    let color: Color = (i == playerIndex) ? .blue : .primary.opacity(0.7)
-                    let rect = CGRect(x: pt.x - r, y: pt.y - r, width: r * 2, height: r * 2)
-                    ctx.fill(Circle().path(in: rect), with: .color(color))
-                }
-            }
-        }
-    }
-
-    private func scale(_ p: CGPoint, _ size: CGSize) -> CGPoint {
-        CGPoint(x: p.x * size.width, y: p.y * size.height)
-    }
-}
+// Entire TrackOutlineMap removed per request

@@ -39,20 +39,9 @@ final class TrackAlignStore {
 	var currentTrackName: String = ""
 	var T: Affine2 = .identity
 
-	func setTrack(_ name: String) {
-		currentTrackName = name
-		if let cg = TrackPolylineStore.shared.loadTransform(track: name) {
-			T = Affine2(a: Double(cg.a), b: Double(cg.b), c: Double(cg.c), d: Double(cg.d), tx: Double(cg.tx), ty: Double(cg.ty))
-		} else {
-			T = .identity
-		}
-	}
+    func setTrack(_ name: String) { currentTrackName = name; T = .identity }
 
-	func save() {
-		guard !currentTrackName.isEmpty else { return }
-		let cg = CGAffineTransform(a: CGFloat(T.a), b: CGFloat(T.b), c: CGFloat(T.c), d: CGFloat(T.d), tx: CGFloat(T.tx), ty: CGFloat(T.ty))
-		TrackPolylineStore.shared.saveTransform(track: currentTrackName, transform: cg)
-	}
+    func save() { /* persistence removed with overlay cleanup */ }
 
 	func apply(_ p: Vec2) -> Vec2 { T.apply(p) }
 

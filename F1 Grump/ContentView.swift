@@ -62,16 +62,13 @@ struct ContentView: View {
     @AppStorage("showCarConditionTile") private var showCarConditionTile: Bool = true
     @AppStorage("showSpeedTile") private var showSpeedTile: Bool = true
     @AppStorage("showSplitsTile") private var showSplitsTile: Bool = true
-    @AppStorage("showTrackTile") private var showTrackTile: Bool = true
+    
 
     // (kept for your reference)
     private let leftTopRatio: CGFloat = 0.70
     private let rightTopRatio: CGFloat = 0.30
 
-    @State private var allTracks = TrackAssets.allNames()
-    @State private var selectedTrack: String = ""
-    @State private var outlineSegments: [[CGPoint]] = []
-    @StateObject private var circuitFetcher = CircuitImageFetcher()
+    
     @State private var speedTileHeight: CGFloat = 0
     @State private var condTileHeight: CGFloat = 0
     @State private var screenPage: Int = 0   // 0: Left+Middle, 1: Middle+Right
@@ -88,6 +85,12 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Inline demo: toggle Map overlay
+            #if DEBUG
+            OverlayDemoToggle()
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
+            #endif
             HeaderView(title: "") {
                 showSettings = true
             }
@@ -151,24 +154,14 @@ struct ContentView: View {
         }
         .onAppear {
             rx.start(port: UInt16(udpPort))
-            if outlineSegments.isEmpty {
-                selectedTrack = "Silverstone" // empty-state default
-            }
-            // Kick off fetching the F1.com circuit image for fallback display
-            if let url = URL(string: "https://www.formula1.com/en/racing/2025/italy") {
-                circuitFetcher.fetch(from: url)
-            }
+            
             
         }
         .onChange(of: udpPort) { _, newPort in
             rx.stop()
             rx.start(port: UInt16(newPort))
         }
-        .onChange(of: rx.trackName) { _, newName in
-            if !newName.isEmpty {
-                selectedTrack = newName
-            }
-        }
+        
         .onDisappear {
             rx.stop()
         }
@@ -226,28 +219,7 @@ struct ContentView: View {
                     }
                 }
 
-                if showTrackTile {
-                    Card(title: "Circuit map", height: hBottom, iconName: "track-position") {
-                        GeometryReader { g in
-                            let side = min(g.size.width, g.size.height) * 0.95
-                            ZStack {
-                                TrackSVGView(
-                                    filename: selectedTrack.isEmpty ? "Silverstone" : selectedTrack,
-                                    carPoints: rx.carPoints,
-                                    playerIndex: rx.playerCarIndex
-                                )
-                                if let ui = circuitFetcher.image, outlineSegments.isEmpty {
-                                    Image(uiImage: ui)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .opacity(0.0)
-                                }
-                            }
-                            .frame(width: side, height: side)
-                            .position(x: g.size.width / 2, y: g.size.height / 2)
-                        }
-                    }
-                }
+                // Circuit tile removed per request
             }
         }
     }
@@ -1002,7 +974,7 @@ struct SettingsView: View {
     @AppStorage("showCarConditionTile") private var showCarConditionTile: Bool = true
     @AppStorage("showSpeedTile") private var showSpeedTile: Bool = true
     @AppStorage("showSplitsTile") private var showSplitsTile: Bool = true
-    @AppStorage("showTrackTile") private var showTrackTile: Bool = true
+    
     @State private var portText: String = ""
 
     var body: some View {
@@ -1030,7 +1002,7 @@ struct SettingsView: View {
                     Toggle("Car condition & damage", isOn: $showCarConditionTile)
                     Toggle("Speed, RPM, DRS & Gear", isOn: $showSpeedTile)
                     Toggle("Splits", isOn: $showSplitsTile)
-                    Toggle("Circuit map / Driver order", isOn: $showTrackTile)
+                    // Circuit tile removed; keep toggle for future but hide
                 }
             }
             .navigationTitle("Settings")
@@ -1464,7 +1436,7 @@ private struct CapDots: View {
 // Hex color helper
 extension Color {
     init(hex: String) {
-        var s = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        let s = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var i: UInt64 = 0
         Scanner(string: s).scanHexInt64(&i)
         let r = Double((i >> 16) & 0xFF) / 255
