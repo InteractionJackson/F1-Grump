@@ -6,9 +6,13 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 import PocketSVG
 
 /// Render an SVG and let you recolor individual paths/groups by their SVG `id`.
+@available(iOS 13.0, *)
 struct DamageSVGView: UIViewRepresentable {
     /// "car_overlay" (without .svg). File must be in bundle subdir `Overlays` or change below.
     let filename: String
@@ -137,8 +141,6 @@ final class DamageSVGContainer: UIView {
     }
 }
 
-import PocketSVG
-
 /// Prints all element IDs found in an SVG in your bundle (for sanity-checking).
 func debugPrintSVGIDs(named file: String, subdir: String = "Overlays") {
     let url = Bundle.main.url(forResource: file, withExtension: "svg", subdirectory: subdir)
@@ -148,8 +150,6 @@ func debugPrintSVGIDs(named file: String, subdir: String = "Overlays") {
     let ids = paths.compactMap { $0.svgAttributes["id"] as? String }
     print("✅ \(file).svg IDs (\(ids.count)):", ids)
 }
-
-import UIKit
 
 // 0…1 → green → yellow → red
 private func damageColor(_ x: CGFloat) -> UIColor {
@@ -203,4 +203,13 @@ private func regexReplace(_ input: String, pattern: String, replacement: String)
     let range = NSRange(location: 0, length: ns.length)
     return rx.stringByReplacingMatches(in: input, options: [], range: range, withTemplate: replacement)
 }
+
+#if !canImport(UIKit)
+// Fallback stub for platforms without UIKit (e.g., macOS build of non-UI target)
+struct DamageSVGView: View {
+    let filename: String
+    let damage: [String: CGFloat]
+    var body: some View { Color.clear }
+}
+#endif
 

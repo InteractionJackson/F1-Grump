@@ -2,6 +2,7 @@ import Foundation
 import Network
 import Combine
 import CoreGraphics
+import QuartzCore
 
 final class TelemetryReceiver: ObservableObject {
     
@@ -59,6 +60,21 @@ final class TelemetryReceiver: ObservableObject {
     @Published var playerCarIndex: Int = 0
     @Published var trackName: String = ""    // e.g., "Silverstone"
     @Published var worldAspect: CGFloat = 1.0 // dx/dz aspect ratio for mapping
+
+    // Driver order / participants
+    @Published var driverNames: [String] = Array(repeating: "", count: 22)
+    @Published var driverPositions: [Int] = Array(repeating: 0, count: 22)
+    @Published var driverOrderItems: [DriverOrderItem] = []
+	@Published var numActiveCars: Int = 20
+	@Published var raceNumbers: [Int] = Array(repeating: 0, count: 22)
+    private var carCurrentMSAll: [Int] = Array(repeating: 0, count: 22)
+    private var lastDriverOrderPublishAt: CFTimeInterval = 0
+    private var carLastLapMSAll: [Int] = Array(repeating: 0, count: 22)
+    private var carBestLapMSAll: [Int] = Array(repeating: 0, count: 22)
+    private var carCompletedSumMSAll: [Int] = Array(repeating: 0, count: 22)
+    private var carCompletedLapCountAll: [Int] = Array(repeating: 0, count: 22)
+    
+    private var carLastLapUpdatedAt: [CFTimeInterval] = Array(repeating: 0, count: 22)
 
     private var conn: NWConnection?
     private var listener: NWListener?
@@ -155,6 +171,9 @@ final class TelemetryReceiver: ObservableObject {
         case 10: parseCarDamage(data, headerSize: headerSize, playerIndex: playerIndex)
         case 7:  parseCarStatus(data, headerSize: headerSize, playerIndex: playerIndex) // ERS, flags, etc.
         case 1:  parseSession(data, headerSize: headerSize) // trackId, weather, etc.
+        case 4:  parseParticipants(data, headerSize: headerSize) // driver names
+        case 9:  parseLobbyInfo(data, headerSize: headerSize) // fallback names (some builds)
+        case 12: parseLobbyInfo(data, headerSize: headerSize) // fallback names (other builds)
         default: break
         }
     }
@@ -236,7 +255,7 @@ final class TelemetryReceiver: ObservableObject {
             wFL = fFL; wFR = fFR; wRL = fRL; wRR = fRR
         }
 
-        // Optional: wings and other aero damage (try common offsets)
+        // Optional: wings and other aero damage (use common byte offsets per spec)
         var wingL: CGFloat = 0, wingR: CGFloat = 0, rearWing: CGFloat = 0
         var floorDmg: CGFloat = 0, sidepodDmg: CGFloat = 0, drsDmg: CGFloat = 0
         // Wing/front/rear damage are commonly bytes after brake damage
@@ -244,18 +263,9 @@ final class TelemetryReceiver: ObservableObject {
         wingL = CGFloat(min(100, Int(data.readU8(offset: carBase + 24)))) / 100.0
         wingR = CGFloat(min(100, Int(data.readU8(offset: carBase + 25)))) / 100.0
         rearWing = CGFloat(min(100, Int(data.readU8(offset: carBase + 26)))) / 100.0
-
-        // Fallback: read as bytes if float heuristics yielded 0
-        if wingL == 0 && wingR == 0 && rearWing == 0 {
-            let bFL = Int(data.readU8(offset: carBase + 4))
-            let bFR = Int(data.readU8(offset: carBase + 5))
-            let bRW = Int(data.readU8(offset: carBase + 6))
-            if bFL > 0 || bFR > 0 || bRW > 0 {
-                wingL = CGFloat(min(100, max(0, bFL))) / 100.0
-                wingR = CGFloat(min(100, max(0, bFR))) / 100.0
-                rearWing = CGFloat(min(100, max(0, bRW))) / 100.0
-            }
-        }
+        // Do NOT attempt speculative fallbacks for wings. Some builds place unrelated values
+        // at nearby offsets (e.g., brake temps/flags) which caused spurious non-zero blips
+        // and visible flicker when there is actually no damage.
 
         // Try nearby floats for floor and sidepod damage
         // Floor, sidepod and DRS per common spec bytes
@@ -290,9 +300,9 @@ final class TelemetryReceiver: ObservableObject {
     /// Smooth tiny fluctuations and snap near-zero values to 0 to avoid color flicker.
     private func stabilizeDamage(_ raw: [String: CGFloat]) -> [String: CGFloat] {
         // Hysteresis thresholds
-        let snapDown: CGFloat = 0.06   // if value < 6% and previously small → 0
-        let snapUpGuard: CGFloat = 0.12 // require >12% to "wake up" from zero state
-        let alpha: CGFloat = 0.15      // low-pass smoothing
+        let snapDown: CGFloat = 0.08   // if value < 8% and previously small → 0
+        let snapUpGuard: CGFloat = 0.16 // require >16% to "wake up" from zero state
+        let alpha: CGFloat = 0.12      // slightly stronger smoothing
 
         var out: [String: CGFloat] = [:]
         for (key, rawValue) in raw {
@@ -305,8 +315,8 @@ final class TelemetryReceiver: ObservableObject {
             // Low-pass filter
             let smoothed = prev * (1 - alpha) + v * alpha
 
-            // Quantize to 1% steps to prevent minor color shifts
-            let quantized = (smoothed * 100).rounded() / 100
+            // Quantize to 2% steps for extra stability on jittery fields
+            let quantized = (smoothed * 50).rounded() / 50
 
             out[key] = quantized
             damageFilter[key] = quantized
@@ -316,36 +326,49 @@ final class TelemetryReceiver: ObservableObject {
 
     /// ERS and other per-car status
     private func parseCarStatus(_ data: Data, headerSize: Int, playerIndex: Int) {
-        // Scan a generous window after the player's block start to find ERS store energy.
-        // Different games/layouts move this field; we search for a plausible Joules or percent field.
-        let carCount = 22
-        let bytesRemaining = max(0, data.count - headerSize)
-        let perCarGuess = max(60, bytesRemaining / max(1, carCount))
-        let carBase = headerSize + (playerIndex * perCarGuess)
-        guard carBase < data.count else { return }
+        // Robust ERS detection: scan the entire packet payload for plausible fields.
+        // Prefer a 0..1 percentage, else a Joules value (normalize to ~4e6 J capacity).
+        let payloadStart = headerSize
+        let payloadEnd = data.count
+        guard payloadEnd - payloadStart >= 4 else { return }
 
-        let window = min(256, data.count - carBase)
-        var bestPctJ: Double = -1
-        var bestPctP: Double = -1
-        var off = 0
-        while off + 4 <= window {
-            let v = data.readF32LE(offset: carBase + off)
+        var bestPctFromPercent: Double = -1
+        var bestPctFromJoules: Double = -1
+
+        var i = payloadStart
+        while i + 4 <= payloadEnd {
+            let v = data.readF32LE(offset: i)
             if v.isFinite && v >= 0 {
-                if v > 1000 && v <= 5_000_000 { // Joules
-                    let cand = Double(v) / 4_000_000.0
-                    if cand >= 0 && cand <= 1 { bestPctJ = max(bestPctJ, cand) }
-                } else if v <= 100 { // Percent
+                // Candidate as percent
+                if v <= 100.5 {
                     let cand = Double(v) / 100.0
-                    if cand >= 0 && cand <= 1 { bestPctP = max(bestPctP, cand) }
+                    if cand >= 0 && cand <= 1 { bestPctFromPercent = max(bestPctFromPercent, cand) }
+                }
+                // Candidate as Joules (common max ~4e6)
+                if v >= 1000 && v <= 5_000_000 {
+                    let cand = Double(v) / 4_000_000.0
+                    if cand >= 0 && cand <= 1 { bestPctFromJoules = max(bestPctFromJoules, cand) }
                 }
             }
-            off += 4
+            i += 4
         }
-        var pct = max(bestPctJ, bestPctP)
-        if pct < 0 { pct = ersEMA } // keep last value if nothing found
-        // Smooth to avoid jumps; bias toward decreasing slowly to reflect consumption
+
+        // Heuristic pick: if both found, favor the one closer to previous EMA to avoid snapping
+        let prev = ersEMA
+        var chosen: Double = -1
+        if bestPctFromPercent >= 0 && bestPctFromJoules >= 0 {
+            let dP = abs(bestPctFromPercent - prev)
+            let dJ = abs(bestPctFromJoules - prev)
+            chosen = (dP <= dJ) ? bestPctFromPercent : bestPctFromJoules
+        } else {
+            chosen = max(bestPctFromPercent, bestPctFromJoules)
+        }
+
+        if chosen < 0 { chosen = prev } // fallback to last known if nothing found
+
+        // Smooth to avoid jitter; mildly inertial to reflect storage behavior
         let alpha = 0.25
-        ersEMA = ersEMA * (1 - alpha) + pct * alpha
+        ersEMA = ersEMA * (1 - alpha) + chosen * alpha
         let clamped = max(0, min(1, ersEMA))
         DispatchQueue.main.async { self.ersPercent = clamped }
     }
@@ -480,7 +503,8 @@ extension TelemetryReceiver {
 
         var globalBest = [Int.max, Int.max, Int.max]
 
-        // Sweep all cars to compute overall best sectors
+        // Sweep all cars to compute overall best sectors and capture per-car position + current time
+        var newPositions: [Int] = Array(repeating: 0, count: carCount)
         for idx in 0..<carCount {
             let base = headerSize + idx * perCar
             guard base + 24 <= data.count else { continue }
@@ -508,10 +532,22 @@ extension TelemetryReceiver {
             if s1 > 0 && s1 < globalBest[0] { globalBest[0] = s1 }
             if s2 > 0 && s2 < globalBest[1] { globalBest[1] = s2 }
             if s3Guess > 0 && s3Guess < globalBest[2] { globalBest[2] = s3Guess }
+
+            // Save current lap ms per car
+            if idx >= 0 && idx < 22, current > 0 {
+                carCurrentMSAll[idx] = current
+            }
+            // Update car positions if available (common offsets)
+            var pos = Int(data.readU8(offset: base + 20))
+            if !(1...22).contains(pos) { pos = Int(data.readU8(offset: base + 21)) }
+            if !(1...22).contains(pos) { pos = Int(data.readU8(offset: base + 19)) }
+            if !(1...22).contains(pos) { pos = Int(data.readU8(offset: base + 22)) }
+            if !(1...22).contains(pos) { pos = Int(data.readU8(offset: base + 18)) }
+            if (1...22).contains(pos) { if idx < newPositions.count { newPositions[idx] = pos } }
         }
         let overall = globalBest.map { $0 == Int.max ? 0 : $0 }
 
-        // Now read the player's values
+        // Now read the player's values (also capture last-lap ms for gaps if needed)
         let pBase = headerSize + playerIndex * perCar
         guard pBase + 16 <= data.count else { return }
         // Prefer MS layout
@@ -535,15 +571,24 @@ extension TelemetryReceiver {
         }
         // s3 live split: use current - s1 - s2, but if current is 0 early in first lap, prefer last known running time
         let s3Guess  = max(0, current - s1 - s2)
-        let lapNum   = Int(data.readU8(offset: pBase + min(20, perCar - 1)))
+        var lapNum   = Int(data.readU8(offset: pBase + min(20, perCar - 1)))
+        if lapNum == 0 && pBase + 21 < data.count { lapNum = Int(data.readU8(offset: pBase + 21)) }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            // Publish driver positions on main thread
+            if newPositions.contains(where: { $0 > 0 }) {
+                self.driverPositions = newPositions
+            }
             self.lapNumber     = lapNum
             self.currentLapMS  = current
             self.lastLapMS     = lastLap
             self.sectorMS      = [s1, s2, s3Guess]
             self.overallBestSectorMS = overall
+            // Track player's last-lap time for potential UI usage; also keep per-car (player) reference
+            if playerIndex >= 0 && playerIndex < self.carLastLapMSAll.count {
+                self.carLastLapMSAll[playerIndex] = lastLap
+            }
             if self.packetCount % 30 == 0 {
                 print("LapData: lap=\(lapNum) curr=\(current) last=\(lastLap) s=[\(s1),\(s2),\(s3Guess)] overall=[\(overall[0]),\(overall[1]),\(overall[2])]")
             }
@@ -584,9 +629,12 @@ extension TelemetryReceiver {
 
         // Compute personal-best sector times across all completed laps we have
         var bestS1 = Int.max, bestS2 = Int.max, bestS3 = Int.max
+        var completedSum = 0
         for idx in 0..<numLaps {
             let base = lapsBase + idx * lapEntry
             guard base + 9 <= data.count else { continue }
+            let lms = Int(data.readLE(offset: base + 0) as UInt32)
+            if lms > 0 { completedSum += lms }
             let s1 = Int(data.readLE(offset: base + 4) as UInt16)
             let s2 = Int(data.readLE(offset: base + 6) as UInt16)
             let s3 = Int(data.readLE(offset: base + 8) as UInt16)
@@ -599,9 +647,27 @@ extension TelemetryReceiver {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.lastLapMS    = lastLap
-            self.bestLapMS    = bestLap
+            if bestLap > 0 {
+                self.bestLapMS = bestLap
+            }
             self.lastSectorMS = [lS1, lS2, lS3]
             self.bestSectorMS = bestSectors
+            let now = CACurrentMediaTime()
+            if carIdx >= 0 && carIdx < self.carLastLapMSAll.count {
+                self.carLastLapMSAll[carIdx] = lastLap
+                self.carLastLapUpdatedAt[carIdx] = now
+            }
+            if carIdx >= 0 && carIdx < self.carBestLapMSAll.count {
+                if bestLap > 0 {
+                    if self.carBestLapMSAll[carIdx] == 0 || bestLap < self.carBestLapMSAll[carIdx] {
+                        self.carBestLapMSAll[carIdx] = bestLap
+                    }
+                }
+            }
+            if carIdx >= 0 && carIdx < self.carCompletedSumMSAll.count {
+                self.carCompletedSumMSAll[carIdx] = completedSum
+                self.carCompletedLapCountAll[carIdx] = numLaps
+            }
             if self.packetCount % 30 == 0 {
                 print("SessHistory: lastLap=\(lastLap) bestLap=\(bestLap) bestS=[\(bestSectors[0]),\(bestSectors[1]),\(bestSectors[2])]")
             }
@@ -632,6 +698,153 @@ extension TelemetryReceiver {
         }
     }
 
+    // MARK: - Participants (driver names)
+    private func parseParticipants(_ data: Data, headerSize: Int) {
+        // F1 24: fixed 22 entries; parse names and raceNumbers conservatively
+        let maxDrivers = 22
+        let bytes = data.count
+        guard bytes > headerSize + 1 else { return }
+        let numActive = Int(data.readU8(offset: headerSize))
+
+        var names: [String] = Array(repeating: "", count: maxDrivers)
+        var numbers: [Int] = Array(repeating: 0, count: maxDrivers)
+
+        let per = 56
+        let base = headerSize + 1
+        for carIdx in 0..<maxDrivers {
+            let start = base + carIdx * per
+            guard start + 55 <= bytes else { break }
+            numbers[carIdx] = Int(data.readU8(offset: start + 4))
+            let nameBytes: [UInt8] = Array(data[(start + 6)..<(start + 54)])
+            let trimmed = Array(nameBytes.prefix { $0 != 0 })
+            let decoded = String(bytes: trimmed, encoding: .utf8)
+                ?? String(bytes: trimmed, encoding: .ascii)
+                ?? ""
+            names[carIdx] = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            var merged = self.driverNames
+            for i in 0..<maxDrivers {
+                let cand = names[i]
+                if !cand.isEmpty { merged[i] = cand }
+            }
+            self.driverNames = merged
+            if self.raceNumbers.count != maxDrivers { self.raceNumbers = Array(repeating: 0, count: maxDrivers) }
+            self.raceNumbers = numbers
+            if numActive > 0 && numActive <= maxDrivers { self.numActiveCars = numActive }
+            self.publishDriverOrder()
+        }
+    }
+
+    // MARK: - LobbyInfo (fallback names)
+    private func parseLobbyInfo(_ data: Data, headerSize: Int) {
+        // F1 24 LobbyInfo: after header, m_numPlayers(u8), then 22 entries (~53-60 bytes). We'll scan len conservatively.
+        let maxEntries = 22
+        let bytes = data.count
+        guard bytes > headerSize + 1 else { return }
+        let _ = Int(data.readU8(offset: headerSize))
+        let per = max(24, (bytes - (headerSize + 1)) / maxEntries)
+        let base = headerSize + 1
+
+        var names: [String] = Array(repeating: "", count: maxEntries)
+        var numbers: [Int] = Array(repeating: 0, count: maxEntries)
+
+        for idx in 0..<maxEntries {
+            let start = base + idx * per
+            guard start < bytes else { break }
+            // Try to find raceNumber at a few likely small offsets (4, 5, 6)
+            var rn = 0
+            for off in [4, 5, 6] {
+                if start + off < bytes {
+                    let v = Int(data.readU8(offset: start + off))
+                    if v >= 1 && v <= 99 { rn = v; break }
+                }
+            }
+            numbers[idx] = rn
+            // Name: try 48 or 32 bytes slices at common offsets (6, 8, 12)
+            var best = ""
+            for off in [6, 8, 12] {
+                let end48 = min(bytes, start + off + 48)
+                if end48 - (start + off) >= 12 {
+                    let slice = Array(data[(start + off)..<end48])
+                    let trimmed = Array(slice.prefix { $0 != 0 })
+                    let decoded = String(bytes: trimmed, encoding: .utf8)
+                        ?? String(bytes: trimmed, encoding: .ascii)
+                        ?? ""
+                    if decoded.count > best.count { best = decoded }
+                }
+            }
+            names[idx] = best.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            var mergedNames = self.driverNames
+            for i in 0..<maxEntries {
+                let cand = names[i]
+                if !cand.isEmpty { mergedNames[i] = cand }
+            }
+            self.driverNames = mergedNames
+            if self.raceNumbers.count != maxEntries { self.raceNumbers = Array(repeating: 0, count: maxEntries) }
+            for i in 0..<maxEntries {
+                if self.raceNumbers[i] == 0 && numbers[i] > 0 { self.raceNumbers[i] = numbers[i] }
+            }
+            self.publishDriverOrder()
+        }
+    }
+
+    private func publishDriverOrder() {
+        // Recompute-based ordering like the sample: fixed 1..N rows, gaps from cumulative times
+        let maxDrivers = min(22, driverNames.count)
+
+        // Build tuples for sorting
+        struct Row { let carIdx: Int; let pos: Int; let laps: Int; let cumulative: Int? }
+        var rows: [Row] = []
+        rows.reserveCapacity(maxDrivers)
+        for carIdx in 0..<maxDrivers {
+            let pos  = (carIdx < driverPositions.count) ? driverPositions[carIdx] : 99
+            let laps = (carIdx < carCompletedLapCountAll.count) ? carCompletedLapCountAll[carIdx] : 0
+            let completedSum = (carIdx < carCompletedSumMSAll.count) ? carCompletedSumMSAll[carIdx] : 0
+            let live = (carIdx < carCurrentMSAll.count) ? carCurrentMSAll[carIdx] : 0
+            let cumulative = (completedSum > 0 || live > 0) ? (completedSum + live) : nil
+            rows.append(Row(carIdx: carIdx, pos: (pos == 0 ? 99 : pos), laps: laps, cumulative: cumulative))
+        }
+        // Sort: position asc → laps desc → cumulative asc
+        rows.sort { a, b in
+            if a.pos != b.pos { return a.pos < b.pos }
+            if a.laps != b.laps { return a.laps > b.laps }
+            let ca = a.cumulative ?? Int.max
+            let cb = b.cumulative ?? Int.max
+            if ca != cb { return ca < cb }
+            let ra = (a.carIdx < raceNumbers.count ? raceNumbers[a.carIdx] : 0)
+            let rb = (b.carIdx < raceNumbers.count ? raceNumbers[b.carIdx] : 0)
+            let rna = (ra == 0 ? Int.max : ra)
+            let rnb = (rb == 0 ? Int.max : rb)
+            return rna < rnb
+        }
+
+        // Map to fixed rows 1..N
+        var items: [DriverOrderItem] = []
+        items.reserveCapacity(maxDrivers)
+        let leaderCum = rows.first?.cumulative ?? 0
+        for (i, r) in rows.enumerated() where i < maxDrivers {
+            let p = i + 1
+            let nameRaw = (r.carIdx < driverNames.count) ? driverNames[r.carIdx] : ""
+            let name = nameRaw.isEmpty ? "Driver \(r.carIdx+1)" : nameRaw
+            items.append(DriverOrderItem(carIndex: r.carIdx, position: p, name: name, gap: "--", color: .white))
+        }
+
+        // Throttle publishes to reduce flicker (max ~5 Hz)
+        let now = CACurrentMediaTime()
+        if now - lastDriverOrderPublishAt < 0.2 { return }
+        lastDriverOrderPublishAt = now
+        self.driverOrderItems = items
+    }
+
+    // removed old parsePositionsFromLapData
+
     private func resetTrackBounds() {
         minX = .greatestFiniteMagnitude
         maxX = -.greatestFiniteMagnitude
@@ -659,4 +872,9 @@ extension TelemetryReceiver {
     }
 
 }
+
+private extension Int {
+    func nonZeroOr(_ fallback: Int) -> Int { self == 0 ? fallback : self }
+}
+
 

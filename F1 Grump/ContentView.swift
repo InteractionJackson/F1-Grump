@@ -58,6 +58,7 @@ struct ContentView: View {
     @StateObject private var circuitFetcher = CircuitImageFetcher()
     @State private var speedTileHeight: CGFloat = 0
     @State private var condTileHeight: CGFloat = 0
+    @State private var screenPage: Int = 0   // 0: Left+Middle, 1: Middle+Right
 
     @State private var demoDamage: [String: CGFloat] = [
         "front_wing_left": 0.2,
@@ -80,14 +81,44 @@ struct ContentView: View {
 
             GeometryReader { geo in
                 let spacing: CGFloat = 16
-                let colW = (geo.size.width - spacing - 48) / 2   // 48 = .padding(24) * 2
+                let containerW = geo.size.width - 48 // account for outer padding
+                let colW = (containerW - spacing) / 2 // two columns visible
+                let pageShift = colW + spacing        // shift by one column
 
-                HStack(alignment: .top, spacing: spacing) {
-                    leftColumn()            // no width parameter here
-                        .frame(width: colW, alignment: .topLeading)
+                VStack(spacing: 0) {
+                    ZStack(alignment: .bottom) {
+                        // Viewport showing two columns; inner HStack has 3 columns side-by-side
+                        HStack(alignment: .top, spacing: spacing) {
+                            leftColumn()
+                                .frame(width: colW, alignment: .topLeading)
+                            rightColumn()
+                                .frame(width: colW, alignment: .topLeading)
+                            orderColumn()
+                                .frame(width: colW, alignment: .topLeading)
+                        }
+                        .frame(width: containerW, alignment: .topLeading)
+                        .offset(x: -CGFloat(screenPage) * pageShift)
+                        .animation(.easeInOut(duration: 0.25), value: screenPage)
+                        .clipped()
 
-                    rightColumn()
-                        .frame(width: colW, alignment: .topLeading)
+                        // Page dots
+                        HStack(spacing: 6) {
+                            Circle().fill(screenPage == 0 ? Color.white.opacity(0.9) : Color.white.opacity(0.35)).frame(width: 6, height: 6)
+                            Circle().fill(screenPage == 1 ? Color.white.opacity(0.9) : Color.white.opacity(0.35)).frame(width: 6, height: 6)
+                        }
+                        .padding(.bottom, 8)
+                        .accessibilityLabel(Text("Pages"))
+                        .accessibilityValue(Text(screenPage == 0 ? "Page 1 of 2" : "Page 2 of 2"))
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+                            .onEnded { value in
+                                let dx = value.translation.width
+                                if dx < -40 && screenPage < 1 { screenPage += 1 }
+                                if dx >  40 && screenPage > 0 { screenPage -= 1 }
+                            }
+                    )
                 }
                 .padding(24)
             }
@@ -147,7 +178,7 @@ struct ContentView: View {
                 if showSpeedTile {
                     Card(title: "Speed, RPM, DRS & Gear", height: speedH) {
                         VStack(alignment: .leading, spacing: 0) {
-                            SpeedRpmTile(rx: rx, rpmRedline: 12000)
+                            NewSpeedTile(rx: rx, rpmRedline: 12000)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
                                 .background(
                                     GeometryReader { proxy in
@@ -180,29 +211,38 @@ struct ContentView: View {
                 }
 
                 if showTrackTile {
-                    Card(title: "Track position (overhead)", height: hBottom) {
+                    Card(title: "Circuit map", height: hBottom) {
                         GeometryReader { g in
-                            let w = g.size.width * 0.80
+                            let side = min(g.size.width, g.size.height) * 0.95
                             ZStack {
-                                // Prefer new SVG assets, fallback to geojson, then to fetched PNG
                                 TrackSVGView(
                                     filename: selectedTrack.isEmpty ? "Silverstone" : selectedTrack,
                                     carPoints: rx.carPoints,
                                     playerIndex: rx.playerCarIndex
                                 )
-                                    .opacity(1)
-                                EmptyView() // legacy GeoJSON layer removed from view
                                 if let ui = circuitFetcher.image, outlineSegments.isEmpty {
                                     Image(uiImage: ui)
                                         .resizable()
                                         .scaledToFit()
-                                        .opacity(0.0) // keep as last resort (disabled for now)
+                                        .opacity(0.0)
                                 }
                             }
-                            .frame(width: w, height: w)
+                            .frame(width: side, height: side)
                             .position(x: g.size.width / 2, y: g.size.height / 2)
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: - Order column (rightmost)
+    @ViewBuilder
+    private func orderColumn() -> some View {
+        GeometryReader { colGeo in
+            VStack(alignment: .leading, spacing: 16) {
+                Card(title: "Driver order", height: colGeo.size.height) {
+                    DriverOrderListView(items: rx.driverOrderItems)
                 }
             }
         }
@@ -469,6 +509,171 @@ func fmtLap(_ ms: Int) -> String {
     let s = (ms % 60000) / 1000
     let x = ms % 1000
     return String(format: "%d:%02d.%03d", m, s, x)
+}
+
+// MARK: - Driver Order Paged Grid (mock/demo)
+
+struct DriverOrderItem: Identifiable, Hashable {
+    let carIndex: Int
+    var id: Int { carIndex }
+    let position: Int
+    let name: String
+    let gap: String
+    let color: Color
+
+    static func mock60() -> [DriverOrderItem] {
+        let teams: [Color] = [.red, .yellow, .green, .cyan, .blue, .purple, .orange, .pink, .teal, .mint]
+        var items: [DriverOrderItem] = []
+        for i in 1...60 {
+            let gap = i == 1 ? "LEADER" : String(format: "+%d.%ds", i / 2, i % 10)
+            items.append(DriverOrderItem(carIndex: i-1, position: i, name: "Hamilton", gap: gap, color: teams[i % teams.count]))
+        }
+        return items
+    }
+}
+
+struct DriverOrderPagedGridView: View {
+    let items: [DriverOrderItem]
+    @Environment(\.sizeCategory) private var sizeCategory
+    @FocusState private var focusedId: UUID?
+
+    var body: some View {
+        GeometryReader { geo in
+            let columnsPerPage = 2
+            let rows = max(1, Int((geo.size.height - 32) / 64))
+            let perPage = max(1, rows * columnsPerPage)
+            let pages = stride(from: 0, to: items.count, by: perPage).map { start -> ArraySlice<DriverOrderItem> in
+                let end = min(start + perPage, items.count)
+                return items[start..<end]
+            }
+
+            TabView {
+                ForEach(Array(pages.enumerated()), id: \.offset) { _, pageItems in
+                    DriverOrderGridPage(items: Array(pageItems), rows: rows)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+        }
+    }
+}
+
+private struct DriverOrderGridPage: View {
+    let items: [DriverOrderItem]
+    let rows: Int
+
+    var columns: [GridItem] {
+        [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+    }
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                ForEach(items) { item in
+                    DriverOrderCell(item: item)
+                }
+            }
+            .padding(16)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Driver order"))
+    }
+}
+
+private struct DriverOrderCell: View {
+    let item: DriverOrderItem
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.tileBG)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.tileBorder, lineWidth: 1)
+            HStack(spacing: 10) {
+                Text("\(item.position)")
+                    .font(.gaugeLabel)
+                    .foregroundColor(.labelEmphasised)
+                    .kerning(0.9)
+                    .frame(width: 26, alignment: .trailing)
+                Circle().fill(item.color).frame(width: 10, height: 10)
+                Text(item.name)
+                    .font(.body18)
+                    .kerning(1.62)
+                Spacer()
+                Text(item.gap)
+                    .font(.body18)
+                    .kerning(1.0)
+                    .foregroundColor(.textPrimary)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+        }
+        .frame(height: 32)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(item.position). \(item.name). Gap: \(item.gap)"))
+    }
+}
+
+// Single-column stacked leaderboard
+struct DriverOrderListView: View {
+    let items: [DriverOrderItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header row
+            HStack {
+                Text("Pos").font(.secondaryEmphasised).foregroundColor(.labelEmphasised).frame(width: 44, alignment: .leading)
+                Text("Driver").font(.secondaryEmphasised).foregroundColor(.labelEmphasised)
+                Spacer()
+                Text("Split").font(.secondaryEmphasised).foregroundColor(.labelEmphasised)
+            }
+            Divider().background(Color.headerButtonBorder.opacity(0.6))
+
+            ScrollView(.vertical, showsIndicators: true) {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.1.id) { idx, item in
+                        ZStack {
+                            (idx % 2 == 1 ? AnyView(Rectangle().fill(Color.white.opacity(0.05))) : AnyView(Rectangle().fill(Color.clear)))
+                            DriverOrderListRow(item: item)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Driver order"))
+    }
+}
+
+private struct DriverOrderListRow: View {
+    let item: DriverOrderItem
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color.clear)
+            HStack(spacing: 12) {
+                Text("\(item.position)")
+                    .font(.body18)
+                    .foregroundColor(.textPrimary)
+                    .frame(width: 44, alignment: .leading)
+                Text(item.name)
+                    .font(.body18)
+                    .foregroundColor(.textPrimary)
+                Spacer()
+                Text(item.position == 1 ? "--" : item.gap)
+                    .font(.body18)
+                    .foregroundColor(.textPrimary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1))
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 40)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(item.position). Driver \(item.name). Split \(item.position == 1 ? "leader" : item.gap)"))
+    }
 }
 
 private extension Array {
@@ -809,7 +1014,7 @@ struct SettingsView: View {
                     Toggle("Car condition & damage", isOn: $showCarConditionTile)
                     Toggle("Speed, RPM, DRS & Gear", isOn: $showSpeedTile)
                     Toggle("Splits", isOn: $showSplitsTile)
-                    Toggle("Track position (overhead)", isOn: $showTrackTile)
+                    Toggle("Circuit map / Driver order", isOn: $showTrackTile)
                 }
             }
             .navigationTitle("Settings")
@@ -869,4 +1074,297 @@ enum AppLogoProvider {
 }
 
 // SVG fallback removed; using PNG or asset image instead
+
+
+// MARK: - New Speed Tile with Dual Rings
+
+struct NewSpeedTile: View {
+    @ObservedObject var rx: TelemetryReceiver
+    var rpmRedline: Double = 12000
+
+    private var mphText: String {
+        let mph = rx.speedKmh * 0.621371
+        return String(Int(mph.rounded()))
+    }
+
+    private var gearText: String {
+        switch rx.gear {
+        case -1: return "R"
+        case 0:  return "N"
+        default: return String(rx.gear)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack(alignment: .center, spacing: 16) {
+                // Left: Speed
+                VStack(spacing: 4) {
+                    Text(mphText)
+                        .font(.title40)
+                        .foregroundColor(.textPrimary)
+                        .monospacedDigit()
+                    Text("MPH")
+                        .font(.gaugeLabel)
+                        .foregroundColor(.labelEmphasised)
+                        .kerning(0.9)
+                }
+                .frame(width: 120, alignment: .center)
+
+                // Center: Rings
+                TelemetryRings(
+                    rpm: CGFloat(max(0, min(1, rx.rpm / max(1, rpmRedline)))) ,
+                    ers: CGFloat(max(0, min(1, rx.ersPercent)))
+                )
+                .frame(maxWidth: .infinity, minHeight: 160, maxHeight: 200)
+
+                // Right: Gear
+                VStack(spacing: 4) {
+                    Text(gearText)
+                        .font(.title40)
+                        .foregroundColor(.textPrimary)
+                    Text("GEAR")
+                        .font(.gaugeLabel)
+                        .foregroundColor(.labelEmphasised)
+                        .kerning(0.9)
+                }
+                .frame(width: 120, alignment: .center)
+            }
+
+            // Bottom bars + DRS pill
+            HStack(alignment: .center, spacing: 16) {
+                CapsuleBar(
+                    label: "Brake",
+                    track: Color(.sRGB, red: 0.25, green: 0.12, blue: 0.16, opacity: 0.6),
+                    fill: Color(.sRGB, red: 1.00, green: 0.30, blue: 0.40, opacity: 1.0),
+                    value: max(0, min(1, rx.brake)),
+                    showDot: true,
+                    reversed: true
+                )
+                .frame(maxWidth: .infinity, minHeight: 22, maxHeight: 22)
+
+                DRSChip()
+
+                CapsuleBar(
+                    label: "Throttle",
+                    track: Color(.sRGB, red: 0.18, green: 0.18, blue: 0.18, opacity: 0.7),
+                    fill: Color(.sRGB, red: 0.72, green: 1.00, blue: 0.30, opacity: 1.0),
+                    value: Double(max(0, min(1, rx.throttle))),
+                    showDot: false
+                )
+                .frame(maxWidth: .infinity, minHeight: 22, maxHeight: 22)
+            }
+        }
+    }
+}
+
+private struct DRSChip: View {
+    var body: some View {
+        Text("DRS")
+            .font(.gaugeLabel)
+            .foregroundColor(.textPrimary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.06), in: Capsule())
+            .overlay(
+                Capsule().stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+            )
+    }
+}
+
+private struct CapsuleBar: View {
+    let label: String
+    let track: Color
+    let fill: Color
+    let value: Double   // 0..1
+    let showDot: Bool
+    var reversed: Bool = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Capsule()
+                    .fill(track)
+                GeometryReader { geo in
+                    let w = max(0, min(1, value)) * geo.size.width
+                    if reversed {
+                        // Fill from right to left
+                        ZStack(alignment: .leading) {
+                            Spacer(minLength: 0)
+                            Capsule()
+                                .fill(fill)
+                                .frame(width: max(6, w))
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .scaleEffect(x: -1, y: 1, anchor: .center)
+                                .scaleEffect(x: -1, y: 1, anchor: .center)
+                            if showDot {
+                                Circle()
+                                    .fill(fill)
+                                    .frame(width: 10, height: 10)
+                                    .offset(x: 3)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: value)
+                    } else {
+                        ZStack(alignment: .trailing) {
+                            Capsule()
+                                .fill(fill)
+                                .frame(width: max(6, w))
+                            if showDot {
+                                Circle()
+                                    .fill(fill)
+                                    .frame(width: 10, height: 10)
+                                    .offset(x: -3)
+                            }
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: value)
+                    }
+                }
+            }
+            .frame(height: 12)
+
+            Text(label)
+                .font(.gaugeLabel)
+                .foregroundColor(.labelEmphasised)
+                .kerning(0.9)
+        }
+    }
+}
+
+// MARK: - Telemetry Rings (RPM segmented + ERS continuous)
+struct TelemetryRings: View {
+    var rpm: CGFloat  // 0..1
+    var ers: CGFloat  // 0..1
+
+    private let startAngle: Angle = .degrees(-210)
+    private let endAngle: Angle   = .degrees(30)
+    private let sweep: CGFloat = 240
+
+    private let rpmWidth: CGFloat = 18
+    private let ersWidth: CGFloat = 18
+    private let ringGap: CGFloat  = 12
+
+    private let t1: CGFloat = 0.70
+    private let t2: CGFloat = 0.90
+    private let t3: CGFloat = 1.00
+
+    var body: some View {
+        GeometryReader { geo in
+            let minSide = min(geo.size.width, geo.size.height)
+            let outerR  = minSide / 2
+            let ersR    = outerR - rpmWidth - ringGap
+
+            ZStack {
+                // Track ring (subtle background under RPM)
+                Arc(start: startAngle, end: endAngle)
+                    .stroke(Color(.sRGB, red: 0.20, green: 0.22, blue: 0.16, opacity: 0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .round))
+                    .frame(width: outerR*2, height: outerR*2)
+
+                // Inner ERS track ring so two arcs are visible even at 0%
+                Arc(start: startAngle, end: endAngle)
+                    .stroke(Color(.sRGB, red: 0.20, green: 0.22, blue: 0.16, opacity: 0.2), style: StrokeStyle(lineWidth: ersWidth, lineCap: .round))
+                    .frame(width: ersR*2, height: ersR*2)
+
+                // RPM segments
+                rpmSegment(start: 0.0, end: t1, value: rpm, radius: outerR, capRadius: 4)
+                    .foregroundStyle(AngularGradient(colors: [Color(hex: "#5ED0FF"), Color(hex: "#1AA0FF")], center: .center, startAngle: startAngle, endAngle: endAngle))
+                rpmSegment(start: t1, end: t2, value: rpm, radius: outerR, capRadius: 4)
+                    .foregroundColor(Color(hex: "#F6C737"))
+                rpmSegment(start: t2, end: t3, value: rpm, radius: outerR, capRadius: 4)
+                    .foregroundColor(Color(hex: "#FF3B58"))
+
+                // ERS ring
+                // ERS with custom small end-caps
+                ZStack {
+                    Arc(start: startAngle, end: angle(for: ers))
+                        .stroke(LinearGradient(colors: [Color(hex: "#EF9D00"), Color(hex: "#FFEE32")], startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: ersWidth, lineCap: .butt))
+                        .frame(width: ersR*2, height: ersR*2)
+                    // Cap dots (8pt diameter for 4pt radius)
+                    CapDots(radius: ersR, start: startAngle, end: angle(for: ers), diameter: 8)
+                        .foregroundStyle(LinearGradient(colors: [Color(hex: "#EF9D00"), Color(hex: "#FFEE32")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: ersR*2, height: ersR*2)
+                }
+                .shadow(color: Color(hex: "#EF9D00").opacity(0.25), radius: 8, x: 0, y: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeInOut(duration: 0.2), value: rpm)
+            .animation(.easeInOut(duration: 0.2), value: ers)
+        }
+    }
+
+    @ViewBuilder
+    private func rpmSegment(start segStart: CGFloat, end segEnd: CGFloat, value: CGFloat, radius: CGFloat, capRadius: CGFloat) -> some View {
+        let filledEnd = min(max(0, value), segEnd)
+        if filledEnd > segStart {
+            ZStack {
+                Arc(start: angle(for: segStart), end: angle(for: filledEnd))
+                    .stroke(style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
+                    .frame(width: radius*2, height: radius*2)
+                CapDots(radius: radius, start: angle(for: segStart), end: angle(for: filledEnd), diameter: capRadius * 2)
+                    .frame(width: radius*2, height: radius*2)
+            }
+        }
+    }
+
+    private func angle(for progress: CGFloat) -> Angle {
+        let clamped = max(0, min(1, progress))
+        let degrees = -210 + sweep * clamped
+        return .degrees(degrees)
+    }
+}
+
+// Basic arc shape for ring segments
+struct Arc: Shape {
+    var start: Angle
+    var end: Angle
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        var p = Path()
+        p.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: false)
+        return p
+    }
+}
+
+// Hex color helper
+private struct CapDots: View {
+    let radius: CGFloat
+    let start: Angle
+    let end: Angle
+    let diameter: CGFloat
+
+    private func point(on radius: CGFloat, angle: Angle, in rect: CGRect) -> CGPoint {
+        let rads = CGFloat(angle.radians)
+        let cx = rect.midX
+        let cy = rect.midY
+        return CGPoint(x: cx + radius * cos(rads), y: cy + radius * sin(rads))
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let rect = geo.frame(in: .local)
+            let p0 = point(on: min(rect.width, rect.height) / 2, angle: start, in: rect)
+            let p1 = point(on: min(rect.width, rect.height) / 2, angle: end, in: rect)
+            ZStack {
+                Circle().frame(width: diameter, height: diameter).position(p0)
+                Circle().frame(width: diameter, height: diameter).position(p1)
+            }
+        }
+    }
+}
+
+// Hex color helper
+extension Color {
+    init(hex: String) {
+        var s = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var i: UInt64 = 0
+        Scanner(string: s).scanHexInt64(&i)
+        let r = Double((i >> 16) & 0xFF) / 255
+        let g = Double((i >> 8) & 0xFF) / 255
+        let b = Double(i & 0xFF) / 255
+        self.init(.sRGB, red: r, green: g, blue: b, opacity: 1)
+    }
+}
 

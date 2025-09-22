@@ -28,16 +28,16 @@ final class TrackSVGContainer: UIView {
     private let dotsLayer = CAShapeLayer()
     private let outlineLayer = CAShapeLayer()
     private var normalizedPoints: [CGPoint] = []
+    private var sampleCloud: [CGPoint] = []
     private var playerIdx: Int = 0
     private var currentName = ""
     private var fittedRect: CGRect = .zero
     private var combinedPath: CGPath?
 
-    private enum DotMapping: CaseIterable {
-        case xy, flipX, flipY, flipXY, swap, swapFlipX, swapFlipY, swapFlipXY
-    }
-    private var mapping: DotMapping = .xy
-    private var mappingResolved = false
+    // Similarity transform (rotation + uniform scale + translation), optional reflection
+    private var similarityTransform: CGAffineTransform = .identity
+    private var transformResolved = false
+    private var cachedTrackName: String = ""
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -63,7 +63,12 @@ final class TrackSVGContainer: UIView {
         currentName = name
         outlineLayer.path = nil
         combinedPath = nil
-        mappingResolved = false
+        transformResolved = false
+        cachedTrackName = name
+        if let t = TrackPolylineStore.shared.loadTransform(track: name) {
+            similarityTransform = t
+            transformResolved = true
+        }
 
         // Try exact match first
         var url = Bundle.main.url(forResource: name, withExtension: "svg", subdirectory: "assets/track outlines")
@@ -83,25 +88,46 @@ final class TrackSVGContainer: UIView {
             return
         }
 
-        // Parse paths
+        // Parse paths; if SVG empty, fall back to geojson outline
         let paths = SVGBezierPath.pathsFromSVG(at: url)
-        guard !paths.isEmpty else {
+        if !paths.isEmpty {
+            let combined = CGMutablePath()
+            for p in paths { combined.addPath(p.cgPath) }
+            combinedPath = combined.copy()
+        } else {
             #if DEBUG
-            print("⚠️ TrackSVGView: SVG had no paths at", url)
+            print("⚠️ TrackSVGView: SVG had no paths at", url, "— attempting GeoJSON fallback for", name)
             #endif
-            return
+            let segs = loadGeoJSONOutline(named: name)
+            if !segs.isEmpty {
+                let combined = CGMutablePath()
+                for seg in segs where !seg.isEmpty {
+                    combined.addLines(between: seg)
+                }
+                combinedPath = combined.copy()
+            }
         }
-
-        // Do not add visible SVG layers; we only use the combined path to set fittedRect and mapping
-        let combined = CGMutablePath()
-        for p in paths { combined.addPath(p.cgPath) }
-        combinedPath = combined.copy()
+        guard combinedPath != nil else { return }
         setNeedsLayout()
     }
 
     func setCarPoints(_ pts: [CGPoint], playerIndex: Int) {
         normalizedPoints = pts
         playerIdx = playerIndex
+        // Accumulate a denser, more complete cloud for alignment
+        if !pts.isEmpty {
+            if sampleCloud.count < 2000 {
+                // Simple de-dup by bucketing to 1% grid to avoid flooding
+                for p in pts {
+                    let q = CGPoint(x: (p.x*100).rounded()/100, y: (p.y*100).rounded()/100)
+                    if !sampleCloud.contains(where: { abs($0.x - q.x) < 0.0001 && abs($0.y - q.y) < 0.0001 }) {
+                        sampleCloud.append(q)
+                    }
+                }
+            } else {
+                sampleCloud.removeFirst(min(pts.count, sampleCloud.count/10))
+            }
+        }
         renderDots()
     }
 
@@ -145,9 +171,12 @@ final class TrackSVGContainer: UIView {
             let svgBounds = cp.boundingBoxOfPath
             let t = aspectFitTransform(for: svgBounds, in: bounds)
             fittedRect = svgBounds.applying(t)
-            if let tp = cp.copy(using: UnsafePointer([t])) {
+            var tVar = t
+            if let tp = cp.copy(using: &tVar) {
                 outlineLayer.path = tp
             }
+            // Outline path changed → recompute transform next render
+            transformResolved = false
         }
         renderDots()
     }
@@ -159,16 +188,34 @@ final class TrackSVGContainer: UIView {
         let rPlayer: CGFloat = 5
         // Use the exact fitted rect that the SVG occupies
         let rect = (fittedRect.width > 0 && fittedRect.height > 0) ? fittedRect : bounds
-        // Resolve the best flip/swap mapping once we have enough data and an outline path
-        if !mappingResolved, normalizedPoints.count >= 8, let hitPath = outlineLayer.path {
-            mapping = bestMapping(for: normalizedPoints, in: rect, hitPath: hitPath)
-            mappingResolved = true
+        // Resolve a best-fit similarity transform once we have enough data and an outline path
+        if !transformResolved, sampleCloud.count >= 200, let outlinePath = outlineLayer.path, rect.width > 0, rect.height > 0 {
+            similarityTransform = resolveSimilarityTransform(points01: sampleCloud, targetRect: rect, outlinePath: outlinePath)
+            transformResolved = true
+            TrackPolylineStore.shared.saveTransform(track: cachedTrackName, transform: similarityTransform)
             #if DEBUG
-            print("TrackSVGView: resolved dot mapping =", mapping)
+            print("TrackSVGView: resolved similarity transform")
             #endif
         }
-        for (i, p) in normalizedPoints.enumerated() {
-            let mapped = mapPoint(p, in: rect, mapping: mapping)
+        var inside = 0
+        var mappedPoints: [CGPoint] = []
+        mappedPoints.reserveCapacity(normalizedPoints.count)
+        for (_, p) in normalizedPoints.enumerated() {
+            let mapped = mapPointSimilarity(p, fallbackRect: rect)
+            mappedPoints.append(mapped)
+            if rect.contains(mapped) { inside += 1 }
+        }
+        // If nothing lands inside, fall back for this frame and try to re-resolve later
+        if transformResolved && inside == 0 {
+            #if DEBUG
+            print("TrackSVGView: no dots inside bounds after transform – using fallback this frame")
+            #endif
+            transformResolved = false
+            mappedPoints.removeAll(keepingCapacity: true)
+            for p in normalizedPoints { mappedPoints.append(mapPointSimilarity(p, fallbackRect: rect)) }
+        }
+
+        for (i, mapped) in mappedPoints.enumerated() {
             let x = mapped.x
             let y = mapped.y
             let r = (i == playerIdx) ? rPlayer : rOthers
@@ -177,50 +224,297 @@ final class TrackSVGContainer: UIView {
         }
         dotsLayer.path = path.cgPath
         dotsLayer.opacity = normalizedPoints.isEmpty ? 0 : 1
+        dotsLayer.isHidden = normalizedPoints.isEmpty
     }
 
-    private func mapPoint(_ p: CGPoint, in rect: CGRect, mapping: DotMapping) -> CGPoint {
-        // base axes
-        let x = CGFloat(p.x)
-        let y = CGFloat(p.y)
-        var u: CGFloat = 0
-        var v: CGFloat = 0
-        switch mapping {
-        case .xy:          (u, v) = (x, 1 - y)
-        case .flipX:       (u, v) = (1 - x, 1 - y)
-        case .flipY:       (u, v) = (x, y)
-        case .flipXY:      (u, v) = (1 - x, y)
-        case .swap:        (u, v) = (y, 1 - x)
-        case .swapFlipX:   (u, v) = (1 - y, 1 - x)
-        case .swapFlipY:   (u, v) = (y, x)
-        case .swapFlipXY:  (u, v) = (1 - y, x)
+    private func mapPointSimilarity(_ p: CGPoint, fallbackRect: CGRect) -> CGPoint {
+        // Base mapping from normalized telemetry (0..1) to a unit square with UIKit Y-down
+        let base = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
+        if transformResolved {
+            return base.applying(similarityTransform)
+        } else {
+            // Fallback: simple aspect-fit into the fittedRect
+            return CGPoint(x: fallbackRect.minX + base.x * fallbackRect.width,
+                           y: fallbackRect.minY + base.y * fallbackRect.height)
         }
-        // Maintain the same aspect-fit scaling used by the SVG: we already use the fittedRect for position,
-        // but if normalization used independent axes, compensate by uniform scaling around rect center.
-        // Compute extents of normalized points to refine scale so dots sit within the track bbox.
-        return CGPoint(x: rect.minX + u * rect.width,
-                       y: rect.minY + v * rect.height)
     }
 
-    private func bestMapping(for pts: [CGPoint], in rect: CGRect, hitPath: CGPath) -> DotMapping {
-        // Try all mappings and pick the one that places the most points inside the track fill
-        var best = DotMapping.xy
-        var bestScore = -1
-        let candidates = DotMapping.allCases
-        // Use a sample of up to 100 points
-        let sample = pts.prefix(100)
-        for m in candidates {
-            var inside = 0
-            for p in sample {
-                let q = mapPoint(p, in: rect, mapping: m)
-                if hitPath.contains(q, using: .winding, transform: .identity) { inside += 1 }
+    // Compute a best-fit transform from normalized points (0..1) to the outline's fitted rect.
+    // Preserve base scale-to-rect; adjust only rotation/translation (and optional mirror) around centroids.
+    private func resolveSimilarityTransform(points01: [CGPoint], targetRect: CGRect, outlinePath: CGPath) -> CGAffineTransform {
+        // 1) Base mapping to fitted rect
+        let baseT = fallbackTransform(for: targetRect)
+        let srcUnit = points01.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }
+        let srcViewBase = srcUnit.map { $0.applying(baseT) }
+
+        // 2) Build dense samples from outline by arc length to match count
+        let outlineDense = samplePathByLength(outlinePath, targetCount: max(200, min(1000, srcViewBase.count)))
+        guard !outlineDense.isEmpty, srcViewBase.count >= 3 else { return baseT }
+
+        // 3) Procrustes: compute rotation (and optional mirror) around centers
+        func procrustes(_ A: [CGPoint], _ B: [CGPoint], allowMirror: Bool) -> CGAffineTransform {
+            // Center
+            func centroid(_ pts: [CGPoint]) -> CGPoint {
+                var cx: CGFloat = 0, cy: CGFloat = 0
+                for p in pts { cx += p.x; cy += p.y }
+                let n = CGFloat(max(1, pts.count))
+                return CGPoint(x: cx/n, y: cy/n)
             }
-            if inside > bestScore {
-                bestScore = inside
-                best = m
+            let muA = centroid(A), muB = centroid(B)
+            let A0 = A.map { CGPoint(x: $0.x - muA.x, y: $0.y - muA.y) }
+            let B0 = B.map { CGPoint(x: $0.x - muB.x, y: $0.y - muB.y) }
+            // Cross-covariance 2x2
+            var h11: CGFloat = 0, h12: CGFloat = 0, h21: CGFloat = 0, h22: CGFloat = 0
+            for k in 0..<A0.count { h11 += A0[k].x * B0[k].x; h12 += A0[k].x * B0[k].y; h21 += A0[k].y * B0[k].x; h22 += A0[k].y * B0[k].y }
+            // SVD(H) for 2x2 via closed form using atan2
+            // Compute rotation R that maximizes trace(R^T H)
+            let rotAngle = atan2(h12 - h21, h11 + h22)
+            var R = CGAffineTransform(rotationAngle: rotAngle)
+            if allowMirror {
+                // Check if mirroring improves alignment by flipping X
+                let rotM = CGAffineTransform(a: -cos(rotAngle), b: -sin(rotAngle), c: sin(rotAngle), d: -cos(rotAngle), tx: 0, ty: 0)
+                // Score by sum of dot products
+                func score(_ T: CGAffineTransform) -> CGFloat {
+                    var s: CGFloat = 0
+                    for k in 0..<A0.count { let v = A0[k].applying(T); s += v.x * B0[k].x + v.y * B0[k].y }
+                    return s
+                }
+                if score(rotM) > score(R) { R = rotM }
             }
+            // Uniform scale s = trace(R^T H) / ||A0||^2
+            var num: CGFloat = 0, den: CGFloat = 0
+            for k in 0..<A0.count {
+                let v = A0[k].applying(R)
+                num += v.x * B0[k].x + v.y * B0[k].y
+                den += A0[k].x * A0[k].x + A0[k].y * A0[k].y
+            }
+            let s = (den > 0) ? (num / den) : 1
+            // Translation
+            let t = CGAffineTransform(translationX: muB.x, y: muB.y)
+                .concatenating(CGAffineTransform(a: s, b: 0, c: 0, d: s, tx: 0, ty: 0))
+                .concatenating(R)
+                .concatenating(CGAffineTransform(translationX: -muA.x, y: -muA.y))
+            return t
+        }
+
+        // 4) ICP (iterative closest point) to avoid point-correspondence issues
+        func rms(_ T: CGAffineTransform) -> CGFloat {
+            var s: CGFloat = 0
+            let n = min(srcViewBase.count, outlineDense.count)
+            for i in 0..<n {
+                let v = srcViewBase[i].applying(T)
+                let o = outlineDense[i]
+                let dx = v.x - o.x
+                let dy = v.y - o.y
+                s += dx * dx + dy * dy
+            }
+            return sqrt(max(0, s / CGFloat(max(1, n))))
+        }
+        func nearest(_ p: CGPoint, in cloud: [CGPoint]) -> CGPoint {
+            var best = cloud[0]
+            var bd = CGFloat.greatestFiniteMagnitude
+            for q in cloud {
+                let dx = p.x - q.x, dy = p.y - q.y
+                let d = dx*dx + dy*dy
+                if d < bd { bd = d; best = q }
+            }
+            return best
+        }
+        func solveICP(for srcView: [CGPoint]) -> CGAffineTransform {
+            var T = CGAffineTransform.identity
+            var lastErr = CGFloat.greatestFiniteMagnitude
+            for _ in 0..<7 {
+                var targets: [CGPoint] = []
+                targets.reserveCapacity(srcView.count)
+                for p in srcView { targets.append(nearest(p.applying(T), in: outlineDense)) }
+                let Tstep = procrustes(srcView, targets, allowMirror: true)
+                T = Tstep.concatenating(T)
+                let err = rms(T)
+                if abs(lastErr - err) < 0.25 { break }
+                lastErr = err
+            }
+            return T
+        }
+
+        // Try orientation variants in unit space: identity, flipX, flipY, flipBoth (around unit center)
+        func flipUnit(_ p: CGPoint, flipX: Bool, flipY: Bool) -> CGPoint {
+            let cx: CGFloat = 0.5, cy: CGFloat = 0.5
+            let fx: CGFloat = flipX ? -1.0 : 1.0
+            let fy: CGFloat = flipY ? -1.0 : 1.0
+            let x = cx + (p.x - cx) * fx
+            let y = cy + (p.y - cy) * fy
+            return CGPoint(x: x, y: y)
+        }
+        var candidates: [CGAffineTransform] = []
+        let variants: [(Bool,Bool)] = [(false,false),(true,false),(false,true),(true,true)]
+        for (fx, fy) in variants {
+            let srcVarUnit = srcUnit.map { flipUnit($0, flipX: fx, flipY: fy) }
+            let srcVarView = srcVarUnit.map { $0.applying(baseT) }
+            let Ticp = solveICP(for: srcVarView)
+            candidates.append(baseT.concatenating(Ticp))
+        }
+        // Try quarter-turn rotations about rect center to handle SVGs rotated by 90/180 deg
+        let c = CGPoint(x: targetRect.midX, y: targetRect.midY)
+        func rotAbout(_ angle: CGFloat) -> CGAffineTransform {
+            CGAffineTransform(translationX: c.x, y: c.y)
+                .rotated(by: angle)
+                .translatedBy(x: -c.x, y: -c.y)
+        }
+        func rmsGlobal(_ Tf: CGAffineTransform) -> CGFloat {
+            var s: CGFloat = 0
+            let n = min(srcUnit.count, outlineDense.count)
+            for i in 0..<n {
+                let v = srcUnit[i].applying(Tf)
+                let o = outlineDense[i]
+                let dx = v.x - o.x, dy = v.y - o.y
+                s += dx*dx + dy*dy
+            }
+            return sqrt(max(0, s / CGFloat(max(1, n))))
+        }
+        candidates = candidates.flatMap { T in [
+            T,
+            T.concatenating(rotAbout(CGFloat.pi / 2)),
+            T.concatenating(rotAbout(CGFloat.pi)),
+            T.concatenating(rotAbout(CGFloat(3) * CGFloat.pi / 2))
+        ]}
+        var best = candidates.first!
+        var bestErr = rmsGlobal(best)
+        for cand in candidates.dropFirst() {
+            let e = rmsGlobal(cand)
+            if e < bestErr { bestErr = e; best = cand }
         }
         return best
+    }
+
+    private func fallbackTransform(for rect: CGRect) -> CGAffineTransform {
+        // Map unit square directly into rect
+        return CGAffineTransform(a: rect.width, b: 0, c: 0, d: rect.height, tx: rect.minX, ty: rect.minY)
+    }
+
+    private struct Stats {
+        let centroid: CGPoint
+        let extents: CGSize
+        let angle: CGFloat      // principal axis angle in radians
+    }
+
+    private func stats(for pts: [CGPoint]) -> Stats? {
+        guard pts.count >= 3 else { return nil }
+        var cx: CGFloat = 0, cy: CGFloat = 0
+        for p in pts { cx += p.x; cy += p.y }
+        cx /= CGFloat(pts.count); cy /= CGFloat(pts.count)
+        var sxx: CGFloat = 0, syy: CGFloat = 0, sxy: CGFloat = 0
+        var minX = CGFloat.greatestFiniteMagnitude, maxX: CGFloat = -.greatestFiniteMagnitude
+        var minY = CGFloat.greatestFiniteMagnitude, maxY: CGFloat = -.greatestFiniteMagnitude
+        for p in pts {
+            let dx = p.x - cx
+            let dy = p.y - cy
+            sxx += dx * dx
+            syy += dy * dy
+            sxy += dx * dy
+            if p.x < minX { minX = p.x }; if p.x > maxX { maxX = p.x }
+            if p.y < minY { minY = p.y }; if p.y > maxY { maxY = p.y }
+        }
+        // Principal angle from covariance (largest eigenvector)
+        // For 2x2 cov [[sxx, sxy],[sxy, syy]] eigenvector angle:
+        let two = CGFloat(2)
+        let angle = 0.5 * atan2(two * sxy, sxx - syy)
+        return Stats(centroid: CGPoint(x: cx, y: cy),
+                     extents: CGSize(width: max(1e-6, maxX - minX), height: max(1e-6, maxY - minY)),
+                     angle: angle)
+    }
+
+    private func collectPathPoints(from path: CGPath, maxPoints: Int) -> [CGPoint] {
+        var points: [CGPoint] = []
+        points.reserveCapacity(min(maxPoints, 1024))
+        path.applyWithBlock { elemPtr in
+            let e = elemPtr.pointee
+            let tp = e.type
+            // Append end points and control points; good enough for PCA
+            switch tp {
+            case .moveToPoint:
+                points.append(e.points[0])
+            case .addLineToPoint:
+                points.append(e.points[0])
+            case .addQuadCurveToPoint:
+                points.append(e.points[0]) // control
+                points.append(e.points[1]) // end
+            case .addCurveToPoint:
+                points.append(e.points[0]) // control1
+                points.append(e.points[1]) // control2
+                points.append(e.points[2]) // end
+            case .closeSubpath:
+                break
+            @unknown default:
+                break
+            }
+        }
+        if points.count > maxPoints {
+            // Downsample uniformly
+            let step = max(1, points.count / maxPoints)
+            var out: [CGPoint] = []
+            out.reserveCapacity(maxPoints)
+            for i in stride(from: 0, through: points.count - 1, by: step) {
+                out.append(points[i])
+                if out.count >= maxPoints { break }
+            }
+            return out
+        }
+        return points
+    }
+
+    private func samplePathByLength(_ path: CGPath, targetCount: Int) -> [CGPoint] {
+        // Flatten path into polyline
+        var pts: [CGPoint] = []
+        path.applyWithBlock { ep in
+            let e = ep.pointee
+            switch e.type {
+            case .moveToPoint:
+                pts.append(e.points[0])
+            case .addLineToPoint:
+                pts.append(e.points[0])
+            case .addQuadCurveToPoint:
+                pts.append(e.points[1])
+            case .addCurveToPoint:
+                pts.append(e.points[2])
+            case .closeSubpath:
+                break
+            @unknown default:
+                break
+            }
+        }
+        if pts.count < 2 { return pts }
+        // Arc-length resample
+        var lens: [CGFloat] = [0]
+        lens.reserveCapacity(pts.count)
+        for i in 1..<pts.count {
+            lens.append(lens[i-1] + hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y))
+        }
+        let total = lens.last ?? 0
+        let n = max(2, targetCount)
+        var out: [CGPoint] = []
+        out.reserveCapacity(n)
+        for k in 0..<n {
+            let d = (CGFloat(k) / CGFloat(n - 1)) * total
+            // Find segment
+            var i = 1
+            while i < lens.count && lens[i] < d { i += 1 }
+            if i >= lens.count { out.append(pts.last!) }
+            else {
+                let d0 = lens[i-1], d1 = lens[i]
+                let t = (d1 > d0) ? (d - d0) / (d1 - d0) : 0
+                let p0 = pts[i-1], p1 = pts[i]
+                out.append(CGPoint(x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t))
+            }
+        }
+        return out
+    }
+
+    private func wrapAngle(_ a: CGFloat) -> CGFloat {
+        var x = a
+        let pi = CGFloat.pi
+        while x > pi { x -= 2 * pi }
+        while x < -pi { x += 2 * pi }
+        return x
     }
 }
 
