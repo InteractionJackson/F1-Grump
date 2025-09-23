@@ -19,6 +19,7 @@ public final class SVGPathLoader {
     }
 
     private var cache: [String: Result] = [:] // key: cacheKey(assetName+bbox)
+    private var rawCache: [String: (path: CGPath, viewBox: CGRect)] = [:]
     private let lock = NSLock()
 
     public func load(assetName: String, bbox: TrackOverlayConfig.BBox) -> Result? {
@@ -80,6 +81,23 @@ public final class SVGPathLoader {
         let result = Result(mercatorPath: mercator.copy()!, mercatorBounds: bounds, viewBox: viewBox)
         cache[key] = result
         return result
+    }
+
+    // Load raw SVG path in its native viewBox coordinates (no projection). Cached by asset name.
+    public func loadViewBox(assetName: String) -> (path: CGPath, viewBox: CGRect)? {
+        lock.lock(); defer { lock.unlock() }
+        if let r = rawCache[assetName] { return r }
+        guard let url = Bundle.main.url(forResource: assetName, withExtension: "svg", subdirectory: "assets/track outlines") else {
+            return nil
+        }
+        let paths = SVGBezierPath.pathsFromSVG(at: url)
+        guard !paths.isEmpty else { return nil }
+        let combined = CGMutablePath()
+        var viewBox = CGRect.null
+        for p in paths { combined.addPath(p.cgPath); viewBox = viewBox.union(p.cgPath.boundingBoxOfPath) }
+        let r = (combined.copy()!, viewBox)
+        rawCache[assetName] = r
+        return r
     }
 }
 

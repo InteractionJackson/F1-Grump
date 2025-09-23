@@ -219,7 +219,17 @@ struct ContentView: View {
                     }
                 }
 
-                // Circuit tile removed per request
+                // Track overlay tile (vector SVG, no basemap)
+                Card(title: "Track overview", height: hBottom, iconName: "track-position") {
+                    let asset = rx.trackName.isEmpty ? "Silverstone" : rx.trackName
+                    TrackOverlayView(
+                        assetName: asset,
+                        carPoints01: rx.carPoints,
+                        playerIndex: rx.playerCarIndex,
+                        inset: 8
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
     }
