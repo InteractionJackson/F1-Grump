@@ -87,17 +87,160 @@ public final class SVGPathLoader {
     public func loadViewBox(assetName: String) -> (path: CGPath, viewBox: CGRect)? {
         lock.lock(); defer { lock.unlock() }
         if let r = rawCache[assetName] { return r }
-        guard let url = Bundle.main.url(forResource: assetName, withExtension: "svg", subdirectory: "assets/track outlines") else {
-            return nil
+        
+        // Map TrackMap.name() outputs to actual SVG file names
+        let trackMappings: [String: String] = [
+            // Direct matches
+            "Silverstone": "Silverstone",
+            "Bahrain": "Bahrain", 
+            "Imola": "Imola",
+            "Miami": "Miami",
+            "Monaco": "Monaco",
+            "Hungaroring": "Hungaroring",
+            "Monza": "Monza",
+            "Suzuka": "Suzuka",
+            "Mexico": "Mexico",
+            "Interlagos": "Interlagos",
+            "Las Vegas": "Las Vegas",
+            "Shanghai": "Shanghai",
+            "Zandvoort": "Zandvoort",
+            // TrackMap.name() -> SVG file name mappings
+            "Melbourne": "Albert Park",        // Australia
+            "Barcelona": "Barcelona-Catalunya", // Spain
+            "Baku": "Baku City",              // Azerbaijan  
+            "Montreal": "Gilles Villeneuve",   // Canada
+            "Red Bull Ring": "Red Bull Ring",  // Austria
+            "Spa": "Spa-Francorchamps",       // Belgium
+            "Singapore": "Marina Bay",         // Marina Bay
+            "COTA": "Circuit of the Americas", // USA Austin
+            "Yas Marina": "Yas Marina",        // Abu Dhabi
+            "Jeddah": "Jeddah Corniche",       // Saudi Arabia
+            "Qatar": "Lusail"                  // Qatar
+        ]
+        
+        let actualFileName = trackMappings[assetName] ?? assetName
+        
+        #if DEBUG
+        print("SVGPathLoader: Looking for '\(assetName)' -> '\(actualFileName)'")
+        #endif
+        
+        // Try NSDataAsset with different path formats
+        let assetPaths = [
+            "track outlines/\(actualFileName)",
+            "track_outlines_\(actualFileName)",
+            actualFileName
+        ]
+        
+        for assetPath in assetPaths {
+            #if DEBUG
+            print("SVGPathLoader: Trying NSDataAsset path: '\(assetPath)'")
+            #endif
+            if let asset = NSDataAsset(name: assetPath),
+               let svgString = String(data: asset.data, encoding: .utf8) {
+                #if DEBUG
+                print("SVGPathLoader: Found NSDataAsset at '\(assetPath)', data size: \(asset.data.count)")
+                #endif
+                let paths = SVGBezierPath.paths(fromSVGString: svgString)
+                if !paths.isEmpty {
+                    let combined = CGMutablePath()
+                    var viewBox = CGRect.null
+                    for p in paths { combined.addPath(p.cgPath); viewBox = viewBox.union(p.cgPath.boundingBoxOfPath) }
+                    let r = (combined.copy()!, viewBox)
+                    rawCache[assetName] = r
+                    #if DEBUG
+                    print("SVGPathLoader: Loaded '\(assetName)' from asset catalog at '\(assetPath)', viewBox: \(viewBox)")
+                    #endif
+                    return r
+                } else {
+                    #if DEBUG
+                    print("SVGPathLoader: NSDataAsset '\(assetPath)' found but no SVG paths parsed")
+                    #endif
+                }
+            }
         }
-        let paths = SVGBezierPath.pathsFromSVG(at: url)
-        guard !paths.isEmpty else { return nil }
-        let combined = CGMutablePath()
-        var viewBox = CGRect.null
-        for p in paths { combined.addPath(p.cgPath); viewBox = viewBox.union(p.cgPath.boundingBoxOfPath) }
-        let r = (combined.copy()!, viewBox)
-        rawCache[assetName] = r
-        return r
+        
+        // Try bundle file lookup with various name patterns and subdirectories
+        let candidateNames = [actualFileName, assetName]
+        let subdirectories = [
+            "Assets.xcassets/track outlines",
+            "assets/track outlines", 
+            "F1 Grump/Assets.xcassets/track outlines",
+            nil // root bundle
+        ]
+        
+        #if DEBUG
+        print("SVGPathLoader: Trying bundle file lookup for candidates: \(candidateNames)")
+        #endif
+        
+        for subdir in subdirectories {
+            for candidate in candidateNames {
+                #if DEBUG
+                print("SVGPathLoader: Trying bundle path: '\(subdir ?? "root")/\(candidate).svg'")
+                #endif
+                if let url = Bundle.main.url(forResource: candidate, withExtension: "svg", subdirectory: subdir) {
+                    #if DEBUG
+                    print("SVGPathLoader: Found bundle file at '\(url.path)'")
+                    #endif
+                    let paths = SVGBezierPath.pathsFromSVG(at: url)
+                    if !paths.isEmpty {
+                        let combined = CGMutablePath()
+                        var viewBox = CGRect.null
+                        for p in paths { combined.addPath(p.cgPath); viewBox = viewBox.union(p.cgPath.boundingBoxOfPath) }
+                        let r = (combined.copy()!, viewBox)
+                        rawCache[assetName] = r
+                        #if DEBUG
+                        print("SVGPathLoader: Loaded '\(assetName)' from bundle as '\(candidate)' in '\(subdir ?? "root")', viewBox: \(viewBox)")
+                        #endif
+                        return r
+                    } else {
+                        #if DEBUG
+                        print("SVGPathLoader: Bundle file '\(candidate).svg' found but no SVG paths parsed")
+                        #endif
+                    }
+                }
+            }
+        }
+        
+        // Last resort: try direct file system access (development/debug only)
+        #if DEBUG
+        let directPaths = [
+            "/Users/mattjackson/Documents/F1 Grump/F1 Grump/Assets.xcassets/track outlines/\(actualFileName).svg",
+            "/Users/mattjackson/Documents/F1 Grump/assets/track outlines/\(actualFileName).svg"
+        ]
+        
+        for directPath in directPaths {
+            print("SVGPathLoader: Trying direct path: '\(directPath)'")
+            let fileExists = FileManager.default.fileExists(atPath: directPath)
+            print("SVGPathLoader: File exists check: \(fileExists)")
+            
+            if fileExists {
+                do {
+                    let svgString = try String(contentsOfFile: directPath, encoding: .utf8)
+                    print("SVGPathLoader: Successfully read file, size: \(svgString.count)")
+                    let paths = SVGBezierPath.paths(fromSVGString: svgString)
+                    print("SVGPathLoader: Parsed \(paths.count) SVG paths")
+                    if !paths.isEmpty {
+                        let combined = CGMutablePath()
+                        var viewBox = CGRect.null
+                        for p in paths { combined.addPath(p.cgPath); viewBox = viewBox.union(p.cgPath.boundingBoxOfPath) }
+                        let r = (combined.copy()!, viewBox)
+                        rawCache[assetName] = r
+                        print("SVGPathLoader: Loaded '\(assetName)' from direct file '\(directPath)', viewBox: \(viewBox)")
+                        return r
+                    } else {
+                        print("SVGPathLoader: Direct file '\(directPath)' found but no SVG paths parsed")
+                    }
+                } catch {
+                    print("SVGPathLoader: Error reading file '\(directPath)': \(error)")
+                }
+            }
+        }
+        #endif
+        
+        #if DEBUG
+        print("SVGPathLoader: Failed to load SVG asset '\(assetName)' (tried: \(candidateNames))")
+        #endif
+        return nil
     }
 }
 

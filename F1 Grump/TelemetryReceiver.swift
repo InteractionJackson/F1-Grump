@@ -60,6 +60,7 @@ final class TelemetryReceiver: ObservableObject {
     @Published var playerCarIndex: Int = 0
     @Published var trackName: String = ""    // e.g., "Silverstone"
     @Published var worldAspect: CGFloat = 1.0 // dx/dz aspect ratio for mapping
+    @Published var suggestedRotationDeg: Double = 0 // 0/90/180/270 auto-picked for overlay alignment
 
     // Driver order / participants
     @Published var driverNames: [String] = Array(repeating: "", count: 22)
@@ -75,6 +76,7 @@ final class TelemetryReceiver: ObservableObject {
     private var carCompletedLapCountAll: [Int] = Array(repeating: 0, count: 22)
     
     private var carLastLapUpdatedAt: [CFTimeInterval] = Array(repeating: 0, count: 22)
+    private var didComputeSuggestedRotation = false
 
     private var conn: NWConnection?
     private var listener: NWListener?
@@ -428,7 +430,17 @@ final class TelemetryReceiver: ObservableObject {
             points.append(CGPoint(x: CGFloat(nx), y: CGFloat(nz)))
         }
 
-        // 3) Publish
+        // 3) Optionally compute a suggested rotation once bounds are frozen
+        if boundsFrozen && !didComputeSuggestedRotation {
+            let vecs = points.map { Vec2(x: Double($0.x), y: Double($0.y)) }
+            let deg = TrackAlignStore.shared.tryRotationsAndPickBest(sample: vecs)
+            DispatchQueue.main.async {
+                self.suggestedRotationDeg = deg
+            }
+            didComputeSuggestedRotation = true
+        }
+
+        // 4) Publish
         DispatchQueue.main.async {
             self.carPoints = points
             self.worldAspect = CGFloat(dx / dz)

@@ -216,11 +216,15 @@ struct ContentView: View {
                 // Track overlay tile (vector SVG, no basemap)
                 Card(title: "Track overview", height: hBottom, iconName: "track-position") {
                     let asset = rx.trackName.isEmpty ? "Silverstone" : rx.trackName
+                    #if DEBUG
+                    let _ = print("ContentView: Track tile - trackName='\(rx.trackName)', asset='\(asset)', carPoints=\(rx.carPoints.count), playerIndex=\(rx.playerCarIndex)")
+                    #endif
                     TrackOverlayView(
                         assetName: asset,
                         carPoints01: rx.carPoints,
                         playerIndex: rx.playerCarIndex,
-                        inset: 8
+                        inset: 8,
+                        rotationDegrees: rx.suggestedRotationDeg
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
