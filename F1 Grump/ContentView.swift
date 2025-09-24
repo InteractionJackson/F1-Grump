@@ -85,12 +85,6 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Inline demo: toggle Map overlay
-            #if DEBUG
-            OverlayDemoToggle()
-                .padding(.horizontal, 24)
-                .padding(.top, 8)
-            #endif
             HeaderView(title: "") {
                 showSettings = true
             }

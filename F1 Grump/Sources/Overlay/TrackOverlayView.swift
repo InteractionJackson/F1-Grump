@@ -26,7 +26,8 @@ public struct TrackOverlayView: View {
                 let vb = raw.viewBox
                 var T = Self.fit(viewBox: vb, into: CGRect(x: inset, y: inset, width: size.width - inset*2, height: size.height - inset*2))
                 if let path = raw.path.copy(using: &T) {
-                    ctx.stroke(Path(path), with: .color(Color(red: 0.604, green: 0.902, blue: 1.0).opacity(0.7)), lineWidth: 2, lineCap: .round, lineJoin: .round)
+                    let style = StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                    ctx.stroke(Path(path), with: .color(Color(red: 0.604, green: 0.902, blue: 1.0).opacity(0.7)), style: style)
                 }
                 // Car dots in normalized space (0..1). Map into fitted rect
                 let rect = CGRect(x: inset, y: inset, width: size.width - inset*2, height: size.height - inset*2)
