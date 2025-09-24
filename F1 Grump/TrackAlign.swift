@@ -61,6 +61,9 @@ final class TrackAlignStore {
 		var bestDeg = 0.0
 		var bestScore = Double.greatestFiniteMagnitude
 		let ctr = Vec2(x: 0.5, y: 0.5)
+		#if DEBUG
+		print("TrackAlign: Testing rotations \(rotations) with \(sample.count) points")
+		#endif
 		for deg in rotations {
 			let pre = Affine2.translation(Vec2(x: -ctr.x, y: -ctr.y))
 			let rot = Affine2.rotation(deg: -deg)
@@ -75,8 +78,14 @@ final class TrackAlignStore {
 				if q.y > maxY { maxY = q.y }
 			}
 			let area = (maxX - minX) * (maxY - minY)
+			#if DEBUG
+			print("TrackAlign: Rotation \(deg)° -> area \(area)")
+			#endif
 			if area < bestScore { bestScore = area; bestDeg = deg }
 		}
+		#if DEBUG
+		print("TrackAlign: Best rotation: \(bestDeg)° (area: \(bestScore))")
+		#endif
 		return bestDeg
 	}
 

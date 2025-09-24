@@ -213,20 +213,36 @@ struct ContentView: View {
                     }
                 }
 
-                // Track overlay tile (vector SVG, no basemap)
+                // Track overlay tile (dynamic track from telemetry data)
                 Card(title: "Track overview", height: hBottom, iconName: "track-position") {
-                    let asset = rx.trackName.isEmpty ? "Silverstone" : rx.trackName
                     #if DEBUG
-                    let _ = print("ContentView: Track tile - trackName='\(rx.trackName)', asset='\(asset)', carPoints=\(rx.carPoints.count), playerIndex=\(rx.playerCarIndex)")
+                    let _ = print("ContentView: Dynamic track tile - carPoints=\(rx.carPoints.count), playerIndex=\(rx.playerCarIndex), trackPoints=\(rx.trackOutlinePoints.count)")
                     #endif
-                    TrackOverlayView(
-                        assetName: asset,
-                        carPoints01: rx.carPoints,
-                        playerIndex: rx.playerCarIndex,
-                        inset: 8,
-                        rotationDegrees: rx.suggestedRotationDeg
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    
+                    if rx.hasLearnedTrack(for: rx.trackName) {
+                        // Use learned track template
+                        DynamicTrackView(
+                            trackOutline: rx.trackOutlinePoints,
+                            carPoints01: rx.carPoints,
+                            playerIndex: rx.playerCarIndex,
+                            teamIds: rx.teamIds,
+                            worldAspect: rx.worldAspect,
+                            inset: 8,
+                            rotationDegrees: rx.trackName == "Bahrain" ? -90 : 0, // 90° counterclockwise for Bahrain
+                            flipHorizontally: rx.trackName == "Bahrain" ? true : false // Horizontal flip for Bahrain
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        // Show track learning interface
+                        VStack {
+                            Text("No learned track for \(rx.trackName.isEmpty ? "current track" : rx.trackName)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.bottom, 4)
+                            
+                            TrackLearningView(telemetryReceiver: rx)
+                        }
+                    }
                 }
             }
         }
@@ -1170,7 +1186,7 @@ struct NewSpeedTile: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: 48)
 
-                DRSChip()
+                DRSChip(isOpen: rx.drsOpen)
                     .frame(height: 48)
 
                 ZStack {
@@ -1195,15 +1211,32 @@ struct NewSpeedTile: View {
 }
 
 private struct DRSChip: View {
+    let isOpen: Bool
+    
+    private var backgroundStyle: some ShapeStyle {
+        if isOpen {
+            return AnyShapeStyle(LinearGradient(
+                colors: [Color(hex: "#58B90A"), Color(hex: "#A5FF32")],
+                startPoint: .leading,
+                endPoint: .trailing
+            ))
+        } else {
+            return AnyShapeStyle(Color.white.opacity(0.06))
+        }
+    }
+    
     var body: some View {
         Text("DRS")
             .font(.gaugeLabel)
-            .foregroundColor(.textPrimary)
+            .foregroundColor(isOpen ? Color.black : .textPrimary)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color.white.opacity(0.06), in: Capsule())
+            .background(backgroundStyle, in: Capsule())
             .overlay(
-                Capsule().stroke(Color.headerButtonBorder.opacity(0.6), lineWidth: 1)
+                Capsule().stroke(
+                    isOpen ? Color.clear : Color.headerButtonBorder.opacity(0.6),
+                    lineWidth: 1
+                )
             )
     }
 }
@@ -1327,27 +1360,26 @@ struct TelemetryRings: View {
 
                 // Inner ERS track ring so two arcs are visible even at 0%
                 Arc(start: startAngle, end: endAngle)
-                    .stroke(Color(hex: "#EF9D00").opacity(0.2), style: StrokeStyle(lineWidth: ersWidth, lineCap: .round))
+                    .stroke(Color(hex: "#EF9D00").opacity(0.2), style: StrokeStyle(lineWidth: ersWidth, lineCap: .butt))
                     .frame(width: ersR*2, height: ersR*2)
 
                 // RPM segments with 2pt gaps between them
                 // First segment: linear gradient #0098EF → #BCEBFF @ 40°
                 let gp = gradientPoints(degrees: 40)
-                rpmSegment(start: 0.0, end: max(0, t1 - halfGap), value: rpm, radius: outerR, capRadius: 4, drawStartDot: true, drawEndDot: true)
+                rpmSegment(start: 0.0, end: max(0, t1 - halfGap), value: rpm, radius: outerR, capRadius: 2)
                     .foregroundStyle(LinearGradient(colors: [Color(hex: "#0098EF"), Color(hex: "#BCEBFF")], startPoint: gp.start, endPoint: gp.end))
-                rpmSegment(start: min(1, t1 + halfGap), end: max(0, t2 - halfGap), value: rpm, radius: outerR, capRadius: 4, drawStartDot: false, drawEndDot: false)
+                rpmSegment(start: min(1, t1 + halfGap), end: max(0, t2 - halfGap), value: rpm, radius: outerR, capRadius: 2)
                     .foregroundColor(Color(hex: "#F6C737"))
-                rpmSegment(start: min(1, t2 + halfGap), end: t3, value: rpm, radius: outerR, capRadius: 4, drawStartDot: true, drawEndDot: true)
+                rpmSegment(start: min(1, t2 + halfGap), end: t3, value: rpm, radius: outerR, capRadius: 2)
                     .foregroundColor(Color(hex: "#FF3B58"))
 
-                // ERS ring
-                // ERS with custom small end-caps
+                // ERS ring with 2pt radius caps
                 ZStack {
                     Arc(start: startAngle, end: angle(for: ers))
                         .stroke(LinearGradient(colors: [Color(hex: "#EF9D00"), Color(hex: "#FFEE32")], startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: ersWidth, lineCap: .butt))
                         .frame(width: ersR*2, height: ersR*2)
-                    // Cap dots (8pt diameter for 4pt radius)
-                    CapDots(radius: ersR, start: startAngle, end: angle(for: ers), diameter: 8)
+                    // Cap dots (4pt diameter for 2pt radius)
+                    CapDots(radius: ersR, start: startAngle, end: angle(for: ers), diameter: 4)
                         .foregroundStyle(LinearGradient(colors: [Color(hex: "#EF9D00"), Color(hex: "#FFEE32")], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: ersR*2, height: ersR*2)
                 }
@@ -1360,14 +1392,14 @@ struct TelemetryRings: View {
     }
 
     @ViewBuilder
-    private func rpmSegment(start segStart: CGFloat, end segEnd: CGFloat, value: CGFloat, radius: CGFloat, capRadius: CGFloat, drawStartDot: Bool = true, drawEndDot: Bool = true) -> some View {
+    private func rpmSegment(start segStart: CGFloat, end segEnd: CGFloat, value: CGFloat, radius: CGFloat, capRadius: CGFloat) -> some View {
         let filledEnd = min(max(0, value), segEnd)
         if filledEnd > segStart {
             ZStack {
                 Arc(start: angle(for: segStart), end: angle(for: filledEnd))
                     .stroke(style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
                     .frame(width: radius*2, height: radius*2)
-                CapDots(radius: radius, start: angle(for: segStart), end: angle(for: filledEnd), diameter: capRadius * 2, drawStart: drawStartDot, drawEnd: drawEndDot)
+                CapDots(radius: radius, start: angle(for: segStart), end: angle(for: filledEnd), diameter: capRadius * 2)
                     .frame(width: radius*2, height: radius*2)
             }
         }

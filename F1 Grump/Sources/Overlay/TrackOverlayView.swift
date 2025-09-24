@@ -12,13 +12,19 @@ public struct TrackOverlayView: View {
     public let playerIndex: Int
     public var inset: CGFloat = 8
     public var rotationDegrees: Double = 0 // rotate car points around center (0.5,0.5)
+    public var scaleFactor: CGFloat = 1.2 // scale car positions from center
+    public var offsetX: CGFloat = 0 // horizontal offset for car positions
+    public var offsetY: CGFloat = 0 // vertical offset for car positions
 
-    public init(assetName: String, carPoints01: [CGPoint], playerIndex: Int, inset: CGFloat = 8, rotationDegrees: Double = 0) {
+    public init(assetName: String, carPoints01: [CGPoint], playerIndex: Int, inset: CGFloat = 8, rotationDegrees: Double = 0, scaleFactor: CGFloat = 1.2, offsetX: CGFloat = 0, offsetY: CGFloat = 0) {
         self.assetName = assetName
         self.carPoints01 = carPoints01
         self.playerIndex = playerIndex
         self.inset = inset
         self.rotationDegrees = rotationDegrees
+        self.scaleFactor = scaleFactor
+        self.offsetX = offsetX
+        self.offsetY = offsetY
     }
 
     public var body: some View {
@@ -39,10 +45,9 @@ public struct TrackOverlayView: View {
                 #endif
                 var T = Self.fit(viewBox: vb, into: CGRect(x: inset, y: inset, width: size.width - inset*2, height: size.height - inset*2))
                 if let path = raw.path.copy(using: &T) {
-                    let style = StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                    ctx.stroke(Path(path), with: .color(Color(red: 0.604, green: 0.902, blue: 1.0).opacity(0.7)), style: style)
+                    ctx.fill(Path(path), with: .color(Color.white.opacity(0.1)))
                     #if DEBUG
-                    print("TrackOverlayView: Stroked path for '\(assetName)'")
+                    print("TrackOverlayView: Filled path for '\(assetName)'")
                     #endif
                 }
                 // Car dots in normalized space (0..1). Map into fitted rect
@@ -50,10 +55,15 @@ public struct TrackOverlayView: View {
                 let radians = rotationDegrees * .pi / 180
                 for (i, p) in carPoints01.enumerated() {
                     let rp = Self.rotate01(p, radians: radians)
-                    let x = rect.minX + rect.width * rp.x
-                    let y = rect.minY + rect.height * (1 - rp.y) // y up
-                    let r: CGFloat = (i == playerIndex) ? 4 : 3
-                    let color: Color = (i == playerIndex) ? .cyan : .white.opacity(0.85)
+                    // Scale from center to expand the car positions
+                    let scaled = Self.scaleFromCenter(rp, factor: scaleFactor)
+                    // Apply offset
+                    let offsetted = CGPoint(x: scaled.x + offsetX, y: scaled.y + offsetY)
+                    // Flip X coordinate horizontally to match SVG orientation
+                    let x = rect.minX + rect.width * (1 - offsetted.x) // Horizontal flip
+                    let y = rect.minY + rect.height * (1 - offsetted.y) // y up
+                    let r: CGFloat = (i == playerIndex) ? 6 : 4
+                    let color: Color = (i == playerIndex) ? .cyan : .white.opacity(0.95)
                     let ellipse = Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r*2, height: r*2))
                     ctx.fill(ellipse, with: .color(color))
                 }
@@ -82,6 +92,17 @@ public struct TrackOverlayView: View {
         let rx = dx * cosA - dy * sinA + cx
         let ry = dx * sinA + dy * cosA + cy
         return CGPoint(x: rx, y: ry)
+    }
+    
+    // Scale a normalized [0,1] point from center (0.5, 0.5)
+    private static func scaleFromCenter(_ p: CGPoint, factor: CGFloat) -> CGPoint {
+        let center: CGFloat = 0.5
+        let dx = p.x - center
+        let dy = p.y - center
+        let scaledX = center + dx * factor
+        let scaledY = center + dy * factor
+        // Clamp to [0,1] to avoid going outside bounds
+        return CGPoint(x: max(0, min(1, scaledX)), y: max(0, min(1, scaledY)))
     }
 }
 

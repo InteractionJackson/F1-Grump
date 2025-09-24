@@ -45,6 +45,12 @@ final class TelemetryReceiver: ObservableObject {
 
     // Track map
     @Published var recentPositions: [CGPoint] = []
+    @Published var allCarsRecentPositions: [[CGPoint]] = [] // All cars' position history for learning
+    @Published var trackOutlinePoints: [CGPoint] = [] // For drawing dynamic track outline
+    private var savedTrackOutlines: [String: [CGPoint]] = [:] // Saved outlines by track name
+    private var learnedTracks: [String: [CGPoint]] = [:] // Pre-learned track templates
+    private var learnedTrackBounds: [String: (minX: Float, maxX: Float, minZ: Float, maxZ: Float)] = [:] // Bounds used when learning tracks
+    private var learnedTrackAspects: [String: CGFloat] = [:] // World aspect ratios for learned tracks
     private var minX: Float = .greatestFiniteMagnitude
     private var maxX: Float = -.greatestFiniteMagnitude
     private var minZ: Float = .greatestFiniteMagnitude
@@ -59,6 +65,7 @@ final class TelemetryReceiver: ObservableObject {
     @Published var carPoints: [CGPoint] = Array(repeating: .zero, count: 22) // all cars, normalized 0..1
     @Published var playerCarIndex: Int = 0
     @Published var trackName: String = ""    // e.g., "Silverstone"
+    @Published var teamIds: [UInt8] = Array(repeating: 0, count: 22) // Team IDs for color coding
     @Published var worldAspect: CGFloat = 1.0 // dx/dz aspect ratio for mapping
     @Published var suggestedRotationDeg: Double = 0 // 0/90/180/270 auto-picked for overlay alignment
 
@@ -77,6 +84,7 @@ final class TelemetryReceiver: ObservableObject {
     
     private var carLastLapUpdatedAt: [CFTimeInterval] = Array(repeating: 0, count: 22)
     private var didComputeSuggestedRotation = false
+    private var lastSavedOutlineCount = 0 // To avoid saving too frequently
 
     private var conn: NWConnection?
     private var listener: NWListener?
@@ -84,6 +92,12 @@ final class TelemetryReceiver: ObservableObject {
     private var damageFilter: [String: CGFloat] = [:]
     private var ersEMA: Double = 0
 
+    // MARK: - Initialization
+    init() {
+        loadSavedTrackOutlines()
+        loadLearnedTracks()
+    }
+    
     // MARK: - Start/Stop
     func start(port: UInt16 = 20777) {
         stop()
@@ -405,17 +419,39 @@ final class TelemetryReceiver: ObservableObject {
                 frozenMinX = minX - padX; frozenMaxX = maxX + padX
                 frozenMinZ = minZ - padZ; frozenMaxZ = maxZ + padZ
                 boundsFrozen = true
+                #if DEBUG
+                print("TelemetryReceiver: Bounds frozen after \(motionFramesObserved) frames, dx=\(dxProbe), dz=\(dzProbe)")
+                #endif
             }
         }
 
         // 2) Normalize into 0..1. Even during warm-up, publish provisional dots
         // using current dynamic bounds so the map is never empty.
 
-        // Normalize using current or frozen bounds
-        let useMinX = boundsFrozen ? frozenMinX : minX
-        let useMaxX = boundsFrozen ? frozenMaxX : maxX
-        let useMinZ = boundsFrozen ? frozenMinZ : minZ
-        let useMaxZ = boundsFrozen ? frozenMaxZ : maxZ
+        // Use learned track bounds if available, otherwise current/frozen bounds
+        let useMinX: Float
+        let useMaxX: Float
+        let useMinZ: Float
+        let useMaxZ: Float
+        
+        if let learnedBounds = learnedTrackBounds[trackName] {
+            // Use the bounds from when the track was learned for consistent alignment
+            useMinX = learnedBounds.minX
+            useMaxX = learnedBounds.maxX
+            useMinZ = learnedBounds.minZ
+            useMaxZ = learnedBounds.maxZ
+            #if DEBUG
+            if motionFramesObserved % 60 == 0 { // Log every ~3 seconds
+                print("TelemetryReceiver: Using learned track bounds for '\(trackName)'")
+            }
+            #endif
+        } else {
+            // Use current dynamic or frozen bounds
+            useMinX = boundsFrozen ? frozenMinX : minX
+            useMaxX = boundsFrozen ? frozenMaxX : maxX
+            useMinZ = boundsFrozen ? frozenMinZ : minZ
+            useMaxZ = boundsFrozen ? frozenMaxZ : maxZ
+        }
         let dx = max(0.001, useMaxX - useMinX)
         let dz = max(0.001, useMaxZ - useMinZ)
 
@@ -434,6 +470,9 @@ final class TelemetryReceiver: ObservableObject {
         if boundsFrozen && !didComputeSuggestedRotation {
             let vecs = points.map { Vec2(x: Double($0.x), y: Double($0.y)) }
             let deg = TrackAlignStore.shared.tryRotationsAndPickBest(sample: vecs)
+            #if DEBUG
+            print("TelemetryReceiver: Bounds frozen, computing rotation from \(vecs.count) points -> \(deg)°")
+            #endif
             DispatchQueue.main.async {
                 self.suggestedRotationDeg = deg
             }
@@ -443,14 +482,383 @@ final class TelemetryReceiver: ObservableObject {
         // 4) Publish
         DispatchQueue.main.async {
             self.carPoints = points
-            self.worldAspect = CGFloat(dx / dz)
+            
+            // Use learned track aspect ratio if available, otherwise current aspect ratio
+            if let learnedAspect = self.learnedTrackAspects[self.trackName] {
+                self.worldAspect = learnedAspect
+                #if DEBUG
+                if self.motionFramesObserved % 120 == 0 { // Log every ~6 seconds
+                    print("TelemetryReceiver: Using learned aspect ratio \(learnedAspect) for '\(self.trackName)'")
+                }
+                #endif
+            } else {
+                self.worldAspect = CGFloat(dx / dz)
+            }
             // (Optional) keep your old recentPositions trail for the player:
             let p = points.indices.contains(playerIndex) ? points[playerIndex] : .zero
             self.recentPositions.append(p)
             if self.recentPositions.count > 800 {
                 self.recentPositions.removeFirst(self.recentPositions.count - 800)
             }
+            
+            // Collect all cars' positions for track learning
+            if self.allCarsRecentPositions.count != worldXs.count {
+                self.allCarsRecentPositions = Array(repeating: [], count: worldXs.count)
+            }
+            
+            for i in 0..<worldXs.count {
+                let carX = (worldXs[i] - useMinX) / dx
+                let carZ = (worldZs[i] - useMinZ) / dz
+                let carPoint = CGPoint(x: CGFloat(carX), y: CGFloat(carZ))
+                
+                self.allCarsRecentPositions[i].append(carPoint)
+                if self.allCarsRecentPositions[i].count > 400 { // Keep fewer points per car
+                    self.allCarsRecentPositions[i].removeFirst(self.allCarsRecentPositions[i].count - 400)
+                }
+            }
+            
+        // Build track outline from player position history (only if no learned track exists)
+        if self.recentPositions.count > 50 && !self.hasLearnedTrack(for: self.trackName) {
+            let newOutline = self.buildTrackOutline(from: self.recentPositions)
+            self.trackOutlinePoints = newOutline
+            
+            // Save periodically (every 50 new points to avoid excessive saves)
+            if !self.trackName.isEmpty && newOutline.count > self.lastSavedOutlineCount + 50 {
+                self.saveTrackOutline(for: self.trackName)
+                self.lastSavedOutlineCount = newOutline.count
+            }
         }
+        }
+    }
+    
+    // Build a track outline from position history
+    private func buildTrackOutline(from positions: [CGPoint]) -> [CGPoint] {
+        guard positions.count > 10 else { return [] }
+        
+        // Simple approach: use every Nth point to create a simplified outline
+        let stepSize = max(1, positions.count / 100) // Target ~100 points max
+        var outline: [CGPoint] = []
+        
+        for i in stride(from: 0, to: positions.count, by: stepSize) {
+            outline.append(positions[i])
+        }
+        
+        // Close the loop if we have enough points and start/end are close
+        if outline.count > 3 {
+            let start = outline.first!
+            let end = outline.last!
+            let distance = sqrt(pow(start.x - end.x, 2) + pow(start.y - end.y, 2))
+            if distance < 0.1 { // Close enough to form a loop
+                outline.append(start) // Close the loop
+            }
+        }
+        
+        return outline
+    }
+    
+    // MARK: - Track Outline Persistence
+    private func loadSavedTrackOutlines() {
+        if let data = UserDefaults.standard.data(forKey: "SavedTrackOutlines"),
+           let decoded = try? JSONDecoder().decode([String: [[Double]]].self, from: data) {
+            // Convert back to CGPoint format
+            savedTrackOutlines = decoded.mapValues { points in
+                points.map { CGPoint(x: $0[0], y: $0[1]) }
+            }
+            #if DEBUG
+            print("TelemetryReceiver: Loaded \(savedTrackOutlines.count) saved track outlines")
+            #endif
+        }
+    }
+    
+    private func saveTrackOutline(for trackName: String) {
+        guard !trackOutlinePoints.isEmpty else { return }
+        savedTrackOutlines[trackName] = trackOutlinePoints
+        
+        // Convert to encodable format (CGPoint isn't Codable by default)
+        let encodable = savedTrackOutlines.mapValues { points in
+            points.map { [Double($0.x), Double($0.y)] }
+        }
+        
+        if let encoded = try? JSONEncoder().encode(encodable) {
+            UserDefaults.standard.set(encoded, forKey: "SavedTrackOutlines")
+            #if DEBUG
+            print("TelemetryReceiver: Saved track outline for '\(trackName)' (\(trackOutlinePoints.count) points)")
+            #endif
+        }
+    }
+    
+    private func loadTrackOutline(for trackName: String) {
+        // Prioritize learned tracks over dynamic outlines
+        if let learned = learnedTracks[trackName] {
+            trackOutlinePoints = learned
+            #if DEBUG
+            print("TelemetryReceiver: Loaded learned track template for '\(trackName)' (\(learned.count) points)")
+            #endif
+        } else if let saved = savedTrackOutlines[trackName] {
+            trackOutlinePoints = saved
+            #if DEBUG
+            print("TelemetryReceiver: Loaded saved track outline for '\(trackName)' (\(saved.count) points)")
+            #endif
+        } else {
+            trackOutlinePoints = []
+            #if DEBUG
+            print("TelemetryReceiver: No track outline for '\(trackName)'")
+            #endif
+        }
+    }
+    
+    // MARK: - Learned Track Management
+    func saveLearnedTrack(points: [CGPoint], for trackName: String) {
+        guard !points.isEmpty else { return }
+        
+        // Clean and optimize the points
+        let cleanedPoints = cleanTrackPoints(points)
+        learnedTracks[trackName] = cleanedPoints
+        
+        // Save the current bounds used for this track
+        let bounds = (
+            minX: boundsFrozen ? frozenMinX : minX,
+            maxX: boundsFrozen ? frozenMaxX : maxX,
+            minZ: boundsFrozen ? frozenMinZ : minZ,
+            maxZ: boundsFrozen ? frozenMaxZ : maxZ
+        )
+        learnedTrackBounds[trackName] = bounds
+        learnedTrackAspects[trackName] = worldAspect
+        
+        // Save tracks to UserDefaults
+        let encodable = learnedTracks.mapValues { points in
+            points.map { [Double($0.x), Double($0.y)] }
+        }
+        
+        if let encoded = try? JSONEncoder().encode(encodable) {
+            UserDefaults.standard.set(encoded, forKey: "LearnedTracks")
+            #if DEBUG
+            print("TelemetryReceiver: Saved learned track '\(trackName)' (\(cleanedPoints.count) points)")
+            #endif
+        }
+        
+        // Save bounds to UserDefaults
+        let encodableBounds = learnedTrackBounds.mapValues { bounds in
+            [Double(bounds.minX), Double(bounds.maxX), Double(bounds.minZ), Double(bounds.maxZ)]
+        }
+        
+        if let encoded = try? JSONEncoder().encode(encodableBounds) {
+            UserDefaults.standard.set(encoded, forKey: "LearnedTrackBounds")
+            #if DEBUG
+            print("TelemetryReceiver: Saved bounds for '\(trackName)': minX=\(bounds.minX), maxX=\(bounds.maxX), minZ=\(bounds.minZ), maxZ=\(bounds.maxZ)")
+            #endif
+        }
+        
+        // Save aspect ratios to UserDefaults
+        let encodableAspects = learnedTrackAspects.mapValues { Double($0) }
+        if let encoded = try? JSONEncoder().encode(encodableAspects) {
+            UserDefaults.standard.set(encoded, forKey: "LearnedTrackAspects")
+            #if DEBUG
+            print("TelemetryReceiver: Saved aspect ratio for '\(trackName)': \(worldAspect)")
+            #endif
+        }
+        
+        // Update current track outline if this is the active track
+        if trackName == self.trackName {
+            trackOutlinePoints = cleanedPoints
+            #if DEBUG
+            print("TelemetryReceiver: ✅ New learned track for '\(trackName)' is now active with proper coordinate bounds")
+            #endif
+        }
+    }
+    
+    private func loadLearnedTracks() {
+        // Load learned tracks
+        if let data = UserDefaults.standard.data(forKey: "LearnedTracks"),
+           let decoded = try? JSONDecoder().decode([String: [[Double]]].self, from: data) {
+            // Convert back to CGPoint format
+            learnedTracks = decoded.mapValues { points in
+                points.map { CGPoint(x: $0[0], y: $0[1]) }
+            }
+            #if DEBUG
+            print("TelemetryReceiver: Loaded \(learnedTracks.count) learned tracks: \(Array(learnedTracks.keys))")
+            #endif
+        }
+        
+        // Load learned track bounds
+        if let data = UserDefaults.standard.data(forKey: "LearnedTrackBounds"),
+           let decoded = try? JSONDecoder().decode([String: [Double]].self, from: data) {
+            // Convert back to bounds format
+            learnedTrackBounds = decoded.compactMapValues { bounds in
+                guard bounds.count == 4 else { return nil }
+                return (minX: Float(bounds[0]), maxX: Float(bounds[1]), minZ: Float(bounds[2]), maxZ: Float(bounds[3]))
+            }
+            #if DEBUG
+            print("TelemetryReceiver: Loaded bounds for \(learnedTrackBounds.count) learned tracks")
+            #endif
+        }
+        
+        // Load learned track aspect ratios
+        if let data = UserDefaults.standard.data(forKey: "LearnedTrackAspects"),
+           let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
+            learnedTrackAspects = decoded.mapValues { CGFloat($0) }
+            #if DEBUG
+            print("TelemetryReceiver: Loaded aspect ratios for \(learnedTrackAspects.count) learned tracks")
+            #endif
+        }
+    }
+    
+    private func cleanTrackPoints(_ points: [CGPoint]) -> [CGPoint] {
+        guard points.count > 10 else { return points }
+        
+        // Remove duplicates and smooth the track
+        var cleaned: [CGPoint] = []
+        let threshold: CGFloat = 0.005 // Minimum distance between points
+        
+        for point in points {
+            if cleaned.isEmpty || 
+               distance(from: cleaned.last!, to: point) > threshold {
+                cleaned.append(point)
+            }
+        }
+        
+        // Close the loop if needed
+        if cleaned.count > 3 {
+            let start = cleaned.first!
+            let end = cleaned.last!
+            if distance(from: start, to: end) < 0.05 {
+                cleaned.append(start) // Close the loop
+            }
+        }
+        
+        return cleaned
+    }
+    
+    private func distance(from p1: CGPoint, to p2: CGPoint) -> CGFloat {
+        sqrt(pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2))
+    }
+    
+    func getLearnedTrackNames() -> [String] {
+        return Array(learnedTracks.keys).sorted()
+    }
+    
+    func hasLearnedTrack(for trackName: String) -> Bool {
+        return learnedTracks[trackName] != nil
+    }
+    
+    func deleteLearnedTrack(for trackName: String) {
+        learnedTracks.removeValue(forKey: trackName)
+        learnedTrackBounds.removeValue(forKey: trackName)
+        learnedTrackAspects.removeValue(forKey: trackName)
+        savedTrackOutlines.removeValue(forKey: trackName)
+        
+        // Save updated learned tracks
+        let encodable = learnedTracks.mapValues { points in
+            points.map { [Double($0.x), Double($0.y)] }
+        }
+        
+        if let encoded = try? JSONEncoder().encode(encodable) {
+            UserDefaults.standard.set(encoded, forKey: "LearnedTracks")
+        }
+        
+        // Save updated learned track bounds
+        let encodableBounds = learnedTrackBounds.mapValues { bounds in
+            [Double(bounds.minX), Double(bounds.maxX), Double(bounds.minZ), Double(bounds.maxZ)]
+        }
+        
+        if let encoded = try? JSONEncoder().encode(encodableBounds) {
+            UserDefaults.standard.set(encoded, forKey: "LearnedTrackBounds")
+        }
+        
+        // Save updated aspect ratios
+        let encodableAspects = learnedTrackAspects.mapValues { Double($0) }
+        if let encoded = try? JSONEncoder().encode(encodableAspects) {
+            UserDefaults.standard.set(encoded, forKey: "LearnedTrackAspects")
+        }
+        
+        // Save updated saved outlines
+        let encodableOutlines = savedTrackOutlines.mapValues { points in
+            points.map { [Double($0.x), Double($0.y)] }
+        }
+        
+        if let encoded = try? JSONEncoder().encode(encodableOutlines) {
+            UserDefaults.standard.set(encoded, forKey: "SavedTrackOutlines")
+        }
+        
+        // Clear current track outline if this is the active track
+        if trackName == self.trackName {
+            trackOutlinePoints = []
+        }
+        
+        #if DEBUG
+        print("TelemetryReceiver: Deleted all data for track '\(trackName)'")
+        #endif
+    }
+    
+    func generateTrackOutlineFromAllCars() -> [CGPoint] {
+        // Combine all cars' positions to create a comprehensive track outline
+        var allPoints: [CGPoint] = []
+        
+        for carPositions in allCarsRecentPositions {
+            allPoints.append(contentsOf: carPositions)
+        }
+        
+        guard allPoints.count > 20 else { return [] }
+        
+        // Sort points to create a coherent track outline
+        // Use a simple approach: find the convex hull or use clustering
+        return buildTrackOutlineFromAllPoints(allPoints)
+    }
+    
+    private func buildTrackOutlineFromAllPoints(_ points: [CGPoint]) -> [CGPoint] {
+        guard points.count > 10 else { return [] }
+        
+        // Create a grid-based approach to find the track outline
+        let gridSize: CGFloat = 0.02 // 2% grid cells
+        var grid: [String: [CGPoint]] = [:]
+        
+        // Group points into grid cells
+        for point in points {
+            let gridX = Int(point.x / gridSize)
+            let gridY = Int(point.y / gridSize)
+            let key = "\(gridX),\(gridY)"
+            
+            if grid[key] == nil {
+                grid[key] = []
+            }
+            grid[key]?.append(point)
+        }
+        
+        // Find cells that have enough points (track areas)
+        let minPointsPerCell = max(1, points.count / 200) // Adaptive threshold
+        var trackCells: [CGPoint] = []
+        
+        for (_, cellPoints) in grid {
+            if cellPoints.count >= minPointsPerCell {
+                // Use the center of the cell
+                let avgX = cellPoints.map { $0.x }.reduce(0, +) / CGFloat(cellPoints.count)
+                let avgY = cellPoints.map { $0.y }.reduce(0, +) / CGFloat(cellPoints.count)
+                trackCells.append(CGPoint(x: avgX, y: avgY))
+            }
+        }
+        
+        // Sort track cells to create a coherent outline
+        guard !trackCells.isEmpty else { return [] }
+        
+        var outline: [CGPoint] = []
+        var remaining = trackCells
+        
+        // Start with the leftmost point
+        var current = remaining.min { $0.x < $1.x } ?? remaining[0]
+        outline.append(current)
+        remaining.removeAll { distance(from: $0, to: current) < 0.001 }
+        
+        // Build path by always going to the nearest unvisited point
+        while !remaining.isEmpty && outline.count < 200 {
+            let nearest = remaining.min { distance(from: current, to: $0) < distance(from: current, to: $1) }
+            guard let next = nearest else { break }
+            
+            outline.append(next)
+            current = next
+            remaining.removeAll { distance(from: $0, to: next) < 0.001 }
+        }
+        
+        return cleanTrackPoints(outline)
     }
 }
 
@@ -687,8 +1095,14 @@ extension TelemetryReceiver {
                 guard let self else { return }
                 if self.trackName != name {
                     print("Session: trackId=\(id) → \(name)")
+                    // Save current track outline before switching
+                    if !self.trackName.isEmpty && !self.trackOutlinePoints.isEmpty {
+                        self.saveTrackOutline(for: self.trackName)
+                    }
                     self.trackName = name
                     self.resetTrackBounds()
+                    // Load saved outline for new track
+                    self.loadTrackOutline(for: name)
                 }
             }
         }
@@ -704,6 +1118,7 @@ extension TelemetryReceiver {
 
         var names: [String] = Array(repeating: "", count: maxDrivers)
         var numbers: [Int] = Array(repeating: 0, count: maxDrivers)
+        var teams: [UInt8] = Array(repeating: 0, count: maxDrivers)
 
         let per = 56
         let base = headerSize + 1
@@ -711,6 +1126,66 @@ extension TelemetryReceiver {
             let start = base + carIdx * per
             guard start + 55 <= bytes else { break }
             numbers[carIdx] = Int(data.readU8(offset: start + 4))
+            // Try multiple offsets for team ID as the format might vary
+            let teamId0 = data.readU8(offset: start + 0)  // Driver AI controlled
+            let teamId1 = data.readU8(offset: start + 1)  // Team ID
+            let teamId2 = data.readU8(offset: start + 2)  // Nationality
+            let teamId3 = data.readU8(offset: start + 3)  // Car number
+            let teamId5 = data.readU8(offset: start + 5)  // Original attempt
+            
+            #if DEBUG
+            if carIdx < 5 { // Debug first 5 cars
+                print("TelemetryReceiver: Car \(carIdx) offsets - 0:\(teamId0) 1:\(teamId1) 2:\(teamId2) 3:\(teamId3) 5:\(teamId5), name: '\(names[carIdx])'")
+            }
+            #endif
+            
+            // Try different offsets and be more flexible with validation
+            // F1 games sometimes use different team ID ranges or formats
+            var assignedTeamId: UInt8 = 0
+            
+            // Try each offset and look for reasonable values
+            let candidates = [(teamId1, "offset1"), (teamId0, "offset0"), (teamId2, "offset2"), (teamId5, "offset5")]
+            
+            for (candidate, source) in candidates {
+                // Accept any value from 0-255, but prefer 1-10 range
+                if candidate >= 1 && candidate <= 10 {
+                    assignedTeamId = candidate
+                    #if DEBUG
+                    if carIdx < 5 {
+                        print("TelemetryReceiver: Car \(carIdx) using team ID \(candidate) from \(source)")
+                    }
+                    #endif
+                    break
+                } else if candidate >= 11 && candidate <= 50 && assignedTeamId == 0 {
+                    // Fallback for extended team ID ranges
+                    assignedTeamId = candidate % 10 // Map to 0-9 range
+                    #if DEBUG
+                    if carIdx < 5 {
+                        print("TelemetryReceiver: Car \(carIdx) using mapped team ID \(assignedTeamId) from \(source) (original: \(candidate))")
+                    }
+                    #endif
+                    break
+                }
+            }
+            
+            // If we still don't have a valid team ID, assign a temporary one based on car position
+            // This ensures we get different colors even if telemetry data is incomplete
+            if assignedTeamId == 0 && carIdx < 20 {
+                assignedTeamId = UInt8((carIdx / 2) % 10 + 1) // Assign teams 1-10, 2 cars per team
+                #if DEBUG
+                if carIdx < 5 {
+                    print("TelemetryReceiver: Car \(carIdx) using fallback team ID \(assignedTeamId) (position-based)")
+                }
+                #endif
+            }
+            
+            teams[carIdx] = assignedTeamId
+            
+            #if DEBUG
+            if carIdx < 5 { // Debug first 5 cars
+                print("TelemetryReceiver: Car \(carIdx) final team ID: \(teams[carIdx]) (\(TeamColors.nameForTeam(teams[carIdx])))")
+            }
+            #endif
             let nameBytes: [UInt8] = Array(data[(start + 6)..<(start + 54)])
             let trimmed = Array(nameBytes.prefix { $0 != 0 })
             let decoded = String(bytes: trimmed, encoding: .utf8)
@@ -729,6 +1204,16 @@ extension TelemetryReceiver {
             self.driverNames = merged
             if self.raceNumbers.count != maxDrivers { self.raceNumbers = Array(repeating: 0, count: maxDrivers) }
             self.raceNumbers = numbers
+            self.teamIds = teams
+            #if DEBUG
+            let nonZeroTeams = teams.enumerated().filter { $0.element != 0 }
+            if !nonZeroTeams.isEmpty {
+                print("TelemetryReceiver: ✅ Team IDs received - \(nonZeroTeams.map { "Car \($0.offset): Team \($0.element) (\(TeamColors.nameForTeam($0.element)))" }.joined(separator: ", "))")
+            } else {
+                print("TelemetryReceiver: ⚠️ No valid team IDs found! All teams are 0. Raw data: \(teams.prefix(10))")
+            }
+            print("TelemetryReceiver: Updated teamIds array - \(self.teamIds.prefix(10))")
+            #endif
             if numActive > 0 && numActive <= maxDrivers { self.numActiveCars = numActive }
             self.publishDriverOrder()
         }
