@@ -221,17 +221,29 @@ struct ContentView: View {
                     
                     if rx.hasLearnedTrack(for: rx.trackName) {
                         // Use learned track template
-                        DynamicTrackView(
-                            trackOutline: rx.trackOutlinePoints,
-                            carPoints01: rx.carPoints,
-                            playerIndex: rx.playerCarIndex,
-                            teamIds: rx.teamIds,
-                            worldAspect: rx.worldAspect,
-                            inset: 8,
-                            rotationDegrees: rx.trackName == "Bahrain" ? -90 : 0, // 90° counterclockwise for Bahrain
-                            flipHorizontally: rx.trackName == "Bahrain" ? true : false // Horizontal flip for Bahrain
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        VStack {
+                            DynamicTrackView(
+                                trackOutline: rx.trackOutlinePoints,
+                                carPoints01: rx.carPoints,
+                                playerIndex: rx.playerCarIndex,
+                                teamIds: rx.teamIds,
+                                worldAspect: rx.worldAspect,
+                                inset: 8,
+                            rotationDegrees: rx.trackName == "Bahrain" ? -90 : 0, // 90° counterclockwise to match official layout
+                            flipHorizontally: rx.trackName == "Bahrain" ? true : false // Horizontal flip to match official layout
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            
+                            #if DEBUG
+                            // Debug button to delete learned track for re-recording
+                            Button("Delete Learned Track") {
+                                rx.deleteLearnedTrack(for: rx.trackName)
+                            }
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .padding(.top, 4)
+                            #endif
+                        }
                     } else {
                         // Show track learning interface
                         VStack {
@@ -309,6 +321,11 @@ struct LapSplitsView: View {
                         let last    = rx.lastSectorMS
                         let best    = rx.bestSectorMS
                         let overall = rx.overallBestSectorMS
+
+                        #if DEBUG
+                        let _ = print("Splits: current=\(current), last=\(last), best=\(best), overall=\(overall)")
+                        let _ = print("Splits: lastLapMS=\(rx.lastLapMS), bestLapMS=\(rx.bestLapMS), currentLapMS=\(rx.currentLapMS)")
+                        #endif
 
                         let s1Shown = last[0] > 0 ? last[0] : current[0]
                         let s2Shown = last[1] > 0 ? last[1] : current[1]
@@ -860,19 +877,19 @@ struct CarConditionGrid: View {
                 }
                 // Side stacks with fixed equal widths
                 HStack(alignment: .center, spacing: colSpacing) {
-                    // Left column should show REAR LEFT above FRONT LEFT
+                    // Left column should show FRONT LEFT above REAR LEFT
                     VStack(spacing: 24) {
-                        TyreStack(wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0, brake: brakes[safe:2] ?? 0) // RL
                         TyreStack(wear: wear[safe:0] ?? 0, temp: temps[safe:0] ?? 0, brake: brakes[safe:0] ?? 0) // FL
+                        TyreStack(wear: wear[safe:2] ?? 0, temp: temps[safe:2] ?? 0, brake: brakes[safe:2] ?? 0) // RL
                     }
                     .frame(width: sideW)
 
                     Color.clear.frame(width: carW) // placeholder space for the car
 
-                    // Right column should show REAR RIGHT above FRONT RIGHT
+                    // Right column should show FRONT RIGHT above REAR RIGHT
                     VStack(spacing: 24) {
-                        TyreStack(wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0, brake: brakes[safe:3] ?? 0) // RR
                         TyreStack(wear: wear[safe:1] ?? 0, temp: temps[safe:1] ?? 0, brake: brakes[safe:1] ?? 0) // FR
+                        TyreStack(wear: wear[safe:3] ?? 0, temp: temps[safe:3] ?? 0, brake: brakes[safe:3] ?? 0) // RR
                     }
                     .frame(width: sideW)
                 }
@@ -1343,43 +1360,64 @@ struct TelemetryRings: View {
                 let bg3Start: CGFloat = min(1, t2 + halfGap)
                 let bg3End:   CGFloat = 1.0
 
-                // First background segment (#BCEBFF @ 20%)
-                Arc(start: angle(for: bg1Start), end: angle(for: bg1End))
-                    .stroke(Color(hex: "#BCEBFF").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
-                    .frame(width: outerR*2, height: outerR*2)
+                // First background segment (#BCEBFF @ 20%) with 1pt rounded corners
+                ZStack {
+                    Arc(start: angle(for: bg1Start), end: angle(for: bg1End))
+                        .stroke(Color(hex: "#BCEBFF").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
+                        .frame(width: outerR*2, height: outerR*2)
+                    // Small 2pt diameter dots for 1pt radius corners
+                    CapDots(radius: outerR, start: angle(for: bg1Start), end: angle(for: bg1End), diameter: 2)
+                        .foregroundColor(Color(hex: "#BCEBFF").opacity(0.2))
+                        .frame(width: outerR*2, height: outerR*2)
+                }
 
-                // Second background segment (#FF5878 @ 20%)
-                Arc(start: angle(for: bg2Start), end: angle(for: bg2End))
-                    .stroke(Color(hex: "#FF5878").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
-                    .frame(width: outerR*2, height: outerR*2)
+                // Second background segment (#FF5878 @ 20%) with 1pt rounded corners
+                ZStack {
+                    Arc(start: angle(for: bg2Start), end: angle(for: bg2End))
+                        .stroke(Color(hex: "#FF5878").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
+                        .frame(width: outerR*2, height: outerR*2)
+                    CapDots(radius: outerR, start: angle(for: bg2Start), end: angle(for: bg2End), diameter: 2)
+                        .foregroundColor(Color(hex: "#FF5878").opacity(0.2))
+                        .frame(width: outerR*2, height: outerR*2)
+                }
 
-                // Third background segment (#E961FF @ 20%)
-                Arc(start: angle(for: bg3Start), end: angle(for: bg3End))
-                    .stroke(Color(hex: "#E961FF").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
-                    .frame(width: outerR*2, height: outerR*2)
+                // Third background segment (#E961FF @ 20%) with 1pt rounded corners
+                ZStack {
+                    Arc(start: angle(for: bg3Start), end: angle(for: bg3End))
+                        .stroke(Color(hex: "#E961FF").opacity(0.2), style: StrokeStyle(lineWidth: rpmWidth, lineCap: .butt))
+                        .frame(width: outerR*2, height: outerR*2)
+                    CapDots(radius: outerR, start: angle(for: bg3Start), end: angle(for: bg3End), diameter: 2)
+                        .foregroundColor(Color(hex: "#E961FF").opacity(0.2))
+                        .frame(width: outerR*2, height: outerR*2)
+                }
 
-                // Inner ERS track ring so two arcs are visible even at 0%
-                Arc(start: startAngle, end: endAngle)
-                    .stroke(Color(hex: "#EF9D00").opacity(0.2), style: StrokeStyle(lineWidth: ersWidth, lineCap: .butt))
-                    .frame(width: ersR*2, height: ersR*2)
+                // Inner ERS track ring with 1pt rounded corners
+                ZStack {
+                    Arc(start: startAngle, end: endAngle)
+                        .stroke(Color(hex: "#EF9D00").opacity(0.2), style: StrokeStyle(lineWidth: ersWidth, lineCap: .butt))
+                        .frame(width: ersR*2, height: ersR*2)
+                    CapDots(radius: ersR, start: startAngle, end: endAngle, diameter: 2)
+                        .foregroundColor(Color(hex: "#EF9D00").opacity(0.2))
+                        .frame(width: ersR*2, height: ersR*2)
+                }
 
                 // RPM segments with 2pt gaps between them
                 // First segment: linear gradient #0098EF → #BCEBFF @ 40°
                 let gp = gradientPoints(degrees: 40)
-                rpmSegment(start: 0.0, end: max(0, t1 - halfGap), value: rpm, radius: outerR, capRadius: 2)
+                rpmSegment(start: 0.0, end: max(0, t1 - halfGap), value: rpm, radius: outerR, capRadius: 1)
                     .foregroundStyle(LinearGradient(colors: [Color(hex: "#0098EF"), Color(hex: "#BCEBFF")], startPoint: gp.start, endPoint: gp.end))
-                rpmSegment(start: min(1, t1 + halfGap), end: max(0, t2 - halfGap), value: rpm, radius: outerR, capRadius: 2)
-                    .foregroundColor(Color(hex: "#F6C737"))
-                rpmSegment(start: min(1, t2 + halfGap), end: t3, value: rpm, radius: outerR, capRadius: 2)
-                    .foregroundColor(Color(hex: "#FF3B58"))
+                rpmSegment(start: min(1, t1 + halfGap), end: max(0, t2 - halfGap), value: rpm, radius: outerR, capRadius: 1)
+                    .foregroundStyle(LinearGradient(colors: [Color(hex: "#FF0F3C"), Color(hex: "#FF5878")], startPoint: gp.start, endPoint: gp.end))
+                rpmSegment(start: min(1, t2 + halfGap), end: t3, value: rpm, radius: outerR, capRadius: 1)
+                    .foregroundStyle(LinearGradient(colors: [Color(hex: "#AA00E5"), Color(hex: "#E961FF")], startPoint: gp.start, endPoint: gp.end))
 
-                // ERS ring with 2pt radius caps
+                // ERS ring with 1pt rounded corners
                 ZStack {
                     Arc(start: startAngle, end: angle(for: ers))
                         .stroke(LinearGradient(colors: [Color(hex: "#EF9D00"), Color(hex: "#FFEE32")], startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: ersWidth, lineCap: .butt))
                         .frame(width: ersR*2, height: ersR*2)
-                    // Cap dots (4pt diameter for 2pt radius)
-                    CapDots(radius: ersR, start: startAngle, end: angle(for: ers), diameter: 4)
+                    // Small 2pt diameter dots for 1pt radius corners
+                    CapDots(radius: ersR, start: startAngle, end: angle(for: ers), diameter: 2)
                         .foregroundStyle(LinearGradient(colors: [Color(hex: "#EF9D00"), Color(hex: "#FFEE32")], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: ersR*2, height: ersR*2)
                 }

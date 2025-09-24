@@ -28,15 +28,18 @@ public struct DynamicTrackView: View {
     public var body: some View {
         GeometryReader { geo in
             Canvas { ctx, size in
-                #if DEBUG
-                print("DynamicTrackView: teamIds array count: \(teamIds.count), carPoints count: \(carPoints01.count)")
-                let nonZeroTeams = teamIds.enumerated().filter { $0.element != 0 }
-                if !nonZeroTeams.isEmpty {
-                    print("DynamicTrackView: Non-zero team IDs - \(nonZeroTeams.map { "Car \($0.offset): Team \($0.element) (\(TeamColors.nameForTeam($0.element)))" }.prefix(10).joined(separator: ", "))")
-                } else {
-                    print("DynamicTrackView: ⚠️ All team IDs are 0! teamIds: \(teamIds.prefix(10))")
-                }
-                #endif
+        #if DEBUG
+        print("DynamicTrackView: teamIds=\(teamIds.count), carPoints=\(carPoints01.count), trackPoints=\(trackOutline.count)")
+        print("DynamicTrackView: worldAspect=\(worldAspect), rotation=\(rotationDegrees), flip=\(flipHorizontally)")
+        if !carPoints01.isEmpty {
+            let first = carPoints01[0]
+            print("DynamicTrackView: First car point: (\(first.x), \(first.y))")
+        }
+        if !trackOutline.isEmpty {
+            let first = trackOutline[0]
+            print("DynamicTrackView: First track point: (\(first.x), \(first.y))")
+        }
+        #endif
                 
                 // Calculate the actual bounds of the track outline to preserve aspect ratio
                 let availableRect = CGRect(x: inset, y: inset, width: size.width - inset*2, height: size.height - inset*2)

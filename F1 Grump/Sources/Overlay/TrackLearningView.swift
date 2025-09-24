@@ -9,6 +9,7 @@ struct TrackLearningView: View {
     @State private var isRecording = false
     @State private var recordedPoints: [CGPoint] = []
     @State private var showSaveDialog = false
+    @State private var lastUpdateTime: Date?
     
     init(telemetryReceiver: TelemetryReceiver) {
         self.telemetryReceiver = telemetryReceiver
@@ -104,15 +105,26 @@ struct TrackLearningView: View {
         } message: {
             Text("Save this track outline for \(telemetryReceiver.trackName)?")
         }
-        .onReceive(telemetryReceiver.$allCarsRecentPositions) { allCarsPositions in
-            if isRecording && !allCarsPositions.isEmpty {
-                // Generate track outline from all cars' current data
-                let newOutline = telemetryReceiver.generateTrackOutlineFromAllCars()
-                if !newOutline.isEmpty {
-                    recordedPoints = newOutline
+                .onReceive(telemetryReceiver.$allCarsRecentPositions) { allCarsPositions in
+                    if isRecording && !allCarsPositions.isEmpty {
+                        // Throttle track generation to prevent performance issues
+                        // Only update every 2 seconds to avoid freezing
+                        let now = Date()
+                        if lastUpdateTime == nil || now.timeIntervalSince(lastUpdateTime!) > 2.0 {
+                            lastUpdateTime = now
+                            
+                            // Generate track outline from all cars' current data
+                            DispatchQueue.global(qos: .userInitiated).async {
+                                let newOutline = telemetryReceiver.generateTrackOutlineFromAllCars()
+                                if !newOutline.isEmpty {
+                                    DispatchQueue.main.async {
+                                        recordedPoints = newOutline
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-        }
     }
     
     private func startRecording() {

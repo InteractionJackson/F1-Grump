@@ -97,7 +97,7 @@ final class TelemetryReceiver: ObservableObject {
         loadSavedTrackOutlines()
         loadLearnedTracks()
     }
-    
+
     // MARK: - Start/Stop
     func start(port: UInt16 = 20777) {
         stop()
@@ -366,23 +366,32 @@ final class TelemetryReceiver: ObservableObject {
             i += 4
         }
 
-        // Heuristic pick: if both found, favor the one closer to previous EMA to avoid snapping
-        let prev = ersEMA
+        // Prioritize percentage-based value when available, as it's more likely to be the actual ERS charge
         var chosen: Double = -1
-        if bestPctFromPercent >= 0 && bestPctFromJoules >= 0 {
-            let dP = abs(bestPctFromPercent - prev)
-            let dJ = abs(bestPctFromJoules - prev)
-            chosen = (dP <= dJ) ? bestPctFromPercent : bestPctFromJoules
+        if bestPctFromPercent >= 0 {
+            // Always prefer percentage-based value when found
+            chosen = bestPctFromPercent
+        } else if bestPctFromJoules >= 0 {
+            // Fall back to Joules-based value only if no percentage found
+            chosen = bestPctFromJoules
         } else {
-            chosen = max(bestPctFromPercent, bestPctFromJoules)
+            // No valid values found, use previous
+            chosen = ersEMA
         }
-
-        if chosen < 0 { chosen = prev } // fallback to last known if nothing found
 
         // Smooth to avoid jitter; mildly inertial to reflect storage behavior
         let alpha = 0.25
+        let previousEMA = ersEMA
         ersEMA = ersEMA * (1 - alpha) + chosen * alpha
         let clamped = max(0, min(1, ersEMA))
+        
+        #if DEBUG
+        // Debug ERS values to compare with in-game display
+        if abs(clamped - previousEMA) > 0.05 || Int.random(in: 1...100) == 1 { // Log significant changes or occasionally
+            print("TelemetryReceiver: ERS - bestPct: \(bestPctFromPercent), bestJ: \(bestPctFromJoules), chosen: \(chosen), final: \(clamped)")
+        }
+        #endif
+        
         DispatchQueue.main.async { self.ersPercent = clamped }
     }
 
@@ -492,7 +501,7 @@ final class TelemetryReceiver: ObservableObject {
                 }
                 #endif
             } else {
-                self.worldAspect = CGFloat(dx / dz)
+            self.worldAspect = CGFloat(dx / dz)
             }
             // (Optional) keep your old recentPositions trail for the player:
             let p = points.indices.contains(playerIndex) ? points[playerIndex] : .zero
@@ -501,19 +510,22 @@ final class TelemetryReceiver: ObservableObject {
                 self.recentPositions.removeFirst(self.recentPositions.count - 800)
             }
             
-            // Collect all cars' positions for track learning
+            // Collect all cars' positions for track learning (with safety limits)
             if self.allCarsRecentPositions.count != worldXs.count {
                 self.allCarsRecentPositions = Array(repeating: [], count: worldXs.count)
             }
             
-            for i in 0..<worldXs.count {
-                let carX = (worldXs[i] - useMinX) / dx
-                let carZ = (worldZs[i] - useMinZ) / dz
-                let carPoint = CGPoint(x: CGFloat(carX), y: CGFloat(carZ))
-                
-                self.allCarsRecentPositions[i].append(carPoint)
-                if self.allCarsRecentPositions[i].count > 400 { // Keep fewer points per car
-                    self.allCarsRecentPositions[i].removeFirst(self.allCarsRecentPositions[i].count - 400)
+            // Only collect data if we don't have a learned track (to prevent unnecessary processing)
+            if !self.hasLearnedTrack(for: self.trackName) {
+                for i in 0..<min(worldXs.count, 22) { // Safety limit: max 22 cars
+                    let carX = (worldXs[i] - useMinX) / dx
+                    let carZ = (worldZs[i] - useMinZ) / dz
+                    let carPoint = CGPoint(x: CGFloat(carX), y: CGFloat(carZ))
+                    
+                    self.allCarsRecentPositions[i].append(carPoint)
+                    if self.allCarsRecentPositions[i].count > 300 { // Reduced from 400 to 300 per car
+                        self.allCarsRecentPositions[i].removeFirst(self.allCarsRecentPositions[i].count - 300)
+                    }
                 }
             }
             
@@ -800,6 +812,16 @@ final class TelemetryReceiver: ObservableObject {
         
         guard allPoints.count > 20 else { return [] }
         
+        // Limit points to prevent performance issues
+        let maxPoints = 5000 // Safety limit to prevent freezing
+        if allPoints.count > maxPoints {
+            let step = allPoints.count / maxPoints
+            allPoints = stride(from: 0, to: allPoints.count, by: step).map { allPoints[$0] }
+            #if DEBUG
+            print("TelemetryReceiver: Reduced points from \(allPoints.count * step) to \(allPoints.count) for performance")
+            #endif
+        }
+        
         // Sort points to create a coherent track outline
         // Use a simple approach: find the convex hull or use clustering
         return buildTrackOutlineFromAllPoints(allPoints)
@@ -808,57 +830,218 @@ final class TelemetryReceiver: ObservableObject {
     private func buildTrackOutlineFromAllPoints(_ points: [CGPoint]) -> [CGPoint] {
         guard points.count > 10 else { return [] }
         
-        // Create a grid-based approach to find the track outline
-        let gridSize: CGFloat = 0.02 // 2% grid cells
-        var grid: [String: [CGPoint]] = [:]
+        #if DEBUG
+        let startTime = CACurrentMediaTime()
+        print("TelemetryReceiver: Building track outline from \(points.count) points...")
+        #endif
         
-        // Group points into grid cells
-        for point in points {
-            let gridX = Int(point.x / gridSize)
-            let gridY = Int(point.y / gridSize)
-            let key = "\(gridX),\(gridY)"
-            
-            if grid[key] == nil {
-                grid[key] = []
-            }
-            grid[key]?.append(point)
+        // MUCH SIMPLER APPROACH: Just sample and smooth the points
+        // This should work reliably for any track
+        
+        // 1. Remove obvious outliers (points way outside the main cluster)
+        let cleanedPoints = removeOutliers(from: points)
+        
+        #if DEBUG
+        print("TelemetryReceiver: Cleaned \(points.count) -> \(cleanedPoints.count) points")
+        #endif
+        
+        // 2. Sample points to get a reasonable number for outline
+        let targetOutlinePoints = 80
+        let samplingStep = max(1, cleanedPoints.count / targetOutlinePoints)
+        
+        var sampledPoints: [CGPoint] = []
+        for i in stride(from: 0, to: cleanedPoints.count, by: samplingStep) {
+            sampledPoints.append(cleanedPoints[i])
         }
         
-        // Find cells that have enough points (track areas)
-        let minPointsPerCell = max(1, points.count / 200) // Adaptive threshold
-        var trackCells: [CGPoint] = []
+        // 3. Sort points by angle from center to create a rough circular outline
+        let centerX = sampledPoints.map { $0.x }.reduce(0, +) / CGFloat(sampledPoints.count)
+        let centerY = sampledPoints.map { $0.y }.reduce(0, +) / CGFloat(sampledPoints.count)
+        let center = CGPoint(x: centerX, y: centerY)
         
-        for (_, cellPoints) in grid {
-            if cellPoints.count >= minPointsPerCell {
-                // Use the center of the cell
-                let avgX = cellPoints.map { $0.x }.reduce(0, +) / CGFloat(cellPoints.count)
-                let avgY = cellPoints.map { $0.y }.reduce(0, +) / CGFloat(cellPoints.count)
-                trackCells.append(CGPoint(x: avgX, y: avgY))
-            }
+        let sortedPoints = sampledPoints.sorted { point1, point2 in
+            let angle1 = atan2(point1.y - center.y, point1.x - center.x)
+            let angle2 = atan2(point2.y - center.y, point2.x - center.x)
+            return angle1 < angle2
         }
         
-        // Sort track cells to create a coherent outline
-        guard !trackCells.isEmpty else { return [] }
+        // 4. Close the loop
+        var outline = sortedPoints
+        if !outline.isEmpty {
+            outline.append(outline.first!) // Close the loop
+        }
+        
+        #if DEBUG
+        let endTime = CACurrentMediaTime()
+        print("TelemetryReceiver: Simple track outline built in \(String(format: "%.3f", (endTime - startTime) * 1000))ms with \(outline.count) points")
+        #endif
+        
+        return outline
+    }
+    
+    private func createSmoothOutline(from points: [CGPoint]) -> [CGPoint] {
+        guard points.count > 3 else { return points }
+        
+        // Calculate adaptive parameters based on track characteristics
+        let minX = points.map { $0.x }.min() ?? 0
+        let maxX = points.map { $0.x }.max() ?? 1
+        let minY = points.map { $0.y }.min() ?? 0
+        let maxY = points.map { $0.y }.max() ?? 1
+        let trackSize = max(maxX - minX, maxY - minY)
+        
+        // Adaptive maximum distance based on track size and point density
+        let maxDistance: CGFloat = max(0.04, min(0.12, trackSize / 8)) // Dynamic max distance
+        let avgDistance = calculateAverageNearestNeighborDistance(points: points)
+        let adaptiveMaxDistance = min(maxDistance, avgDistance * 3) // Don't exceed 3x average distance
+        
+        #if DEBUG
+        print("TelemetryReceiver: Track size: \(trackSize), maxDistance: \(adaptiveMaxDistance), avgDistance: \(avgDistance)")
+        print("TelemetryReceiver: Creating outline from \(points.count) track cells")
+        #endif
         
         var outline: [CGPoint] = []
-        var remaining = trackCells
+        var remaining = points
         
-        // Start with the leftmost point
-        var current = remaining.min { $0.x < $1.x } ?? remaining[0]
-        outline.append(current)
-        remaining.removeAll { distance(from: $0, to: current) < 0.001 }
+        // Start with the leftmost point (likely start/finish line)
+        guard let start = remaining.min(by: { $0.x < $1.x }) else { return points }
+        outline.append(start)
+        remaining.removeAll { pointDistance(from: $0, to: start) < 0.001 }
         
-        // Build path by always going to the nearest unvisited point
-        while !remaining.isEmpty && outline.count < 200 {
-            let nearest = remaining.min { distance(from: current, to: $0) < distance(from: current, to: $1) }
-            guard let next = nearest else { break }
+        var current = start
+        
+        // Build path by connecting to nearby points in a logical order
+        while !remaining.isEmpty && outline.count < 300 {
+            // Find all points within reasonable distance
+            let nearbyPoints = remaining.filter { pointDistance(from: current, to: $0) <= adaptiveMaxDistance }
+            
+            let next: CGPoint
+            if !nearbyPoints.isEmpty {
+                // Choose the point that creates the smoothest path
+                if outline.count > 1 {
+                    let prevDirection = CGPoint(
+                        x: current.x - outline[outline.count - 2].x,
+                        y: current.y - outline[outline.count - 2].y
+                    )
+                    
+                    next = nearbyPoints.min { point1, point2 in
+                        let dir1 = CGPoint(x: point1.x - current.x, y: point1.y - current.y)
+                        let dir2 = CGPoint(x: point2.x - current.x, y: point2.y - current.y)
+                        
+                        // Prefer points that continue in a similar direction
+                        let angle1 = abs(atan2(dir1.y, dir1.x) - atan2(prevDirection.y, prevDirection.x))
+                        let angle2 = abs(atan2(dir2.y, dir2.x) - atan2(prevDirection.y, prevDirection.x))
+                        
+                        return angle1 < angle2
+                    } ?? nearbyPoints[0]
+                } else {
+                    // Just pick the nearest point
+                    next = nearbyPoints.min { pointDistance(from: current, to: $0) < pointDistance(from: current, to: $1) }!
+                }
+            } else {
+                // No nearby points, find the closest point overall
+                guard let closest = remaining.min(by: { pointDistance(from: current, to: $0) < pointDistance(from: current, to: $1) }) else { break }
+                next = closest
+            }
             
             outline.append(next)
             current = next
-            remaining.removeAll { distance(from: $0, to: next) < 0.001 }
+            remaining.removeAll { pointDistance(from: $0, to: next) < 0.001 }
         }
         
-        return cleanTrackPoints(outline)
+        // Try to close the loop if start and end are close
+        if outline.count > 10 {
+            let start = outline.first!
+            let end = outline.last!
+            if pointDistance(from: start, to: end) < 0.15 {
+                outline.append(start) // Close the loop
+            }
+        }
+        
+        return outline
+    }
+    
+    private func pointDistance(from p1: CGPoint, to p2: CGPoint) -> CGFloat {
+        let dx = p1.x - p2.x
+        let dy = p1.y - p2.y
+        return sqrt(dx * dx + dy * dy)
+    }
+    
+    private func calculateAverageNearestNeighborDistance(points: [CGPoint]) -> CGFloat {
+        guard points.count > 1 else { return 0.05 }
+        
+        let sampleSize = min(50, points.count) // Sample to avoid performance issues
+        let samplePoints = Array(points.prefix(sampleSize))
+        
+        var totalDistance: CGFloat = 0
+        
+        for point in samplePoints {
+            let nearestDistance = points
+                .filter { $0 != point }
+                .map { pointDistance(from: point, to: $0) }
+                .min() ?? 0.05
+            totalDistance += nearestDistance
+        }
+        
+        return totalDistance / CGFloat(sampleSize)
+    }
+    
+    private func fallbackSimpleOutline(from points: [CGPoint]) -> [CGPoint] {
+        #if DEBUG
+        print("TelemetryReceiver: Using fallback simple outline approach")
+        #endif
+        
+        // Simple approach: just sample points evenly with some smoothing
+        let targetPoints = min(100, max(20, points.count / 50))
+        let step = max(1, points.count / targetPoints)
+        
+        var sampledPoints: [CGPoint] = []
+        for i in stride(from: 0, to: points.count, by: step) {
+            sampledPoints.append(points[i])
+        }
+        
+        // Try to create a rough outline by removing obviously bad points
+        var filtered = sampledPoints
+        
+        // Remove points that are too far from the median position
+        if filtered.count > 10 {
+            let medianX = filtered.map { $0.x }.sorted()[filtered.count / 2]
+            let medianY = filtered.map { $0.y }.sorted()[filtered.count / 2]
+            let medianPoint = CGPoint(x: medianX, y: medianY)
+            
+            let distances = filtered.map { pointDistance(from: $0, to: medianPoint) }
+            let maxDistance = distances.sorted()[Int(Double(distances.count) * 0.9)] // 90th percentile
+            
+            filtered = filtered.filter { pointDistance(from: $0, to: medianPoint) <= maxDistance }
+        }
+        
+        return cleanTrackPoints(filtered)
+    }
+    
+    private func removeOutliers(from points: [CGPoint]) -> [CGPoint] {
+        guard points.count > 20 else { return points }
+        
+        // Calculate center and standard deviation
+        let centerX = points.map { $0.x }.reduce(0, +) / CGFloat(points.count)
+        let centerY = points.map { $0.y }.reduce(0, +) / CGFloat(points.count)
+        let center = CGPoint(x: centerX, y: centerY)
+        
+        let distances = points.map { pointDistance(from: $0, to: center) }
+        let avgDistance = distances.reduce(0, +) / CGFloat(distances.count)
+        
+        // Remove points that are more than 3 standard deviations from the mean
+        let variance = distances.map { pow($0 - avgDistance, 2) }.reduce(0, +) / CGFloat(distances.count)
+        let stdDev = sqrt(variance)
+        let maxDistance = avgDistance + (stdDev * 2.5) // 2.5 sigma
+        
+        let filtered = points.filter { pointDistance(from: $0, to: center) <= maxDistance }
+        
+        #if DEBUG
+        if filtered.count != points.count {
+            print("TelemetryReceiver: Removed \(points.count - filtered.count) outliers (maxDist: \(maxDistance))")
+        }
+        #endif
+        
+        return filtered
     }
 }
 
@@ -993,6 +1176,12 @@ extension TelemetryReceiver {
             self.lastLapMS     = lastLap
             self.sectorMS      = [s1, s2, s3Guess]
             self.overallBestSectorMS = overall
+            
+            #if DEBUG
+            if lapNum > 0 && (current > 0 || lastLap > 0) {
+                print("LapData: lap=\(lapNum), current=\(current), last=\(lastLap), sectors=[\(s1), \(s2), \(s3Guess)], overall=\(overall)")
+            }
+            #endif
             // Track player's last-lap time for potential UI usage; also keep per-car (player) reference
             if playerIndex >= 0 && playerIndex < self.carLastLapMSAll.count {
                 self.carLastLapMSAll[playerIndex] = lastLap
@@ -1058,6 +1247,12 @@ extension TelemetryReceiver {
             }
             self.lastSectorMS = [lS1, lS2, lS3]
             self.bestSectorMS = bestSectors
+            
+            #if DEBUG
+            if bestLap > 0 || lastLap > 0 {
+                print("SessionHistory: lastLap=\(lastLap), bestLap=\(bestLap), lastSectors=[\(lS1), \(lS2), \(lS3)], bestSectors=\(bestSectors)")
+            }
+            #endif
             let now = CACurrentMediaTime()
             if carIdx >= 0 && carIdx < self.carLastLapMSAll.count {
                 self.carLastLapMSAll[carIdx] = lastLap
