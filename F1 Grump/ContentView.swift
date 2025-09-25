@@ -219,41 +219,98 @@ struct ContentView: View {
                     let _ = print("ContentView: Dynamic track tile - carPoints=\(rx.carPoints.count), playerIndex=\(rx.playerCarIndex), trackPoints=\(rx.trackOutlinePoints.count)")
                     #endif
                     
-                    if rx.hasLearnedTrack(for: rx.trackName) {
-                        // Use learned track template
-                        VStack {
-                            DynamicTrackView(
-                                trackOutline: rx.trackOutlinePoints,
-                                carPoints01: rx.carPoints,
-                                playerIndex: rx.playerCarIndex,
-                                teamIds: rx.teamIds,
-                                worldAspect: rx.worldAspect,
-                                inset: 8,
-                            rotationDegrees: rx.trackName == "Bahrain" ? -90 : 0, // 90° counterclockwise to match official layout
-                            flipHorizontally: rx.trackName == "Bahrain" ? true : false // Horizontal flip to match official layout
-                            )
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if rx.isTrackLearned {
+                        // Display saved track - instant load!
+                        DynamicTrackView(
+                            trackOutline: rx.trackOutlinePoints,
+                            carPoints01: rx.carPoints,
+                            playerIndex: rx.playerCarIndex,
+                            teamIds: rx.teamIds,
+                            worldAspect: rx.worldAspect,
+                            inset: 8,
+                            rotationDegrees: 0, // Reset for debugging
+                            flipHorizontally: false // Reset for debugging
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if rx.isRecordingTrack {
+                        // Currently recording
+                        VStack(spacing: 12) {
+                            Text("🎬 Recording Track")
+                                .font(.headline)
+                                .foregroundColor(.orange)
                             
-                            #if DEBUG
-                            // Debug button to delete learned track for re-recording
-                            Button("Delete Learned Track") {
-                                rx.deleteLearnedTrack(for: rx.trackName)
+                            Text("Drive a clean lap to record the track outline")
+                                .font(.caption)
+                                .foregroundColor(.textSecondary)
+                                .multilineTextAlignment(.center)
+                            
+                            Button("Stop Recording") {
+                                rx.stopTrackRecording()
                             }
                             .font(.caption)
-                            .foregroundColor(.red)
-                            .padding(.top, 4)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.orange)
+                            .cornerRadius(8)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        // No learned track - show status and record option
+                        VStack(spacing: 12) {
+                            if PrebuiltTrackData.hasTrack(name: rx.trackName) {
+                                // Prebuilt track available but not loaded (shouldn't happen)
+                                Text("⚡ Prebuilt Track Available")
+                                    .font(.headline)
+                                    .foregroundColor(.green)
+                                
+                                Text("This track has professional data - it should load instantly!")
+                                    .font(.caption)
+                                    .foregroundColor(.textSecondary)
+                                    .multilineTextAlignment(.center)
+                            } else {
+                                // No prebuilt data - user can record
+                                Text("📝 Track Not Available")
+                                    .font(.headline)
+                                    .foregroundColor(.textSecondary)
+                                
+                                Text("This track doesn't have prebuilt data.\nYou can record your own track outline.")
+                                    .font(.caption)
+                                    .foregroundColor(.textSecondary)
+                                    .multilineTextAlignment(.center)
+                                
+                                Button("Start Recording") {
+                                    rx.startTrackRecording()
+                                }
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.blue)
+                                .cornerRadius(8)
+                            }
+                            
+                            #if DEBUG
+                            VStack(spacing: 4) {
+                                Text("Debug: Prebuilt tracks: \(PrebuiltTrackData.trackCount)")
+                                    .font(.caption2)
+                                    .foregroundColor(.gray)
+                                
+                            if rx.hasLearnedTrack(trackName: rx.trackName) {
+                                Button("Delete User Track") {
+                                    rx.deleteLearnedTrack(for: rx.trackName)
+                                }
+                                    .font(.caption2)
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.red.opacity(0.1))
+                                    .cornerRadius(6)
+                                }
+                            }
                             #endif
                         }
-                    } else {
-                        // Show track learning interface
-                        VStack {
-                            Text("No learned track for \(rx.trackName.isEmpty ? "current track" : rx.trackName)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.bottom, 4)
-                            
-                            TrackLearningView(telemetryReceiver: rx)
-                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             }

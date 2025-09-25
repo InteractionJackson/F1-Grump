@@ -47,6 +47,8 @@ final class TelemetryReceiver: ObservableObject {
     @Published var recentPositions: [CGPoint] = []
     @Published var allCarsRecentPositions: [[CGPoint]] = [] // All cars' position history for learning
     @Published var trackOutlinePoints: [CGPoint] = [] // For drawing dynamic track outline
+    @Published var isTrackLearned: Bool = false // Whether current track has a saved outline
+    @Published var isRecordingTrack: Bool = false // Whether currently recording a new track
     private var savedTrackOutlines: [String: [CGPoint]] = [:] // Saved outlines by track name
     private var learnedTracks: [String: [CGPoint]] = [:] // Pre-learned track templates
     private var learnedTrackBounds: [String: (minX: Float, maxX: Float, minZ: Float, maxZ: Float)] = [:] // Bounds used when learning tracks
@@ -96,6 +98,7 @@ final class TelemetryReceiver: ObservableObject {
     init() {
         loadSavedTrackOutlines()
         loadLearnedTracks()
+        loadLearnedTrackBounds()
     }
 
     // MARK: - Start/Stop
@@ -428,6 +431,23 @@ final class TelemetryReceiver: ObservableObject {
                 frozenMinX = minX - padX; frozenMaxX = maxX + padX
                 frozenMinZ = minZ - padZ; frozenMaxZ = maxZ + padZ
                 boundsFrozen = true
+                
+                // Save learned bounds for prebuilt tracks so they align perfectly next time
+                if PrebuiltTrackData.hasTrack(name: trackName) && learnedTrackBounds[trackName] == nil {
+                    learnedTrackBounds[trackName] = (
+                        minX: frozenMinX,
+                        maxX: frozenMaxX,
+                        minZ: frozenMinZ,
+                        maxZ: frozenMaxZ
+                    )
+                    // Persist to disk for future sessions
+                    saveLearnedTrackBounds()
+                    
+                    #if DEBUG
+                    print("TelemetryReceiver: 💾 Saved learned bounds for prebuilt track '\(trackName)'")
+                    #endif
+                }
+                
                 #if DEBUG
                 print("TelemetryReceiver: Bounds frozen after \(motionFramesObserved) frames, dx=\(dxProbe), dz=\(dzProbe)")
                 #endif
@@ -1043,6 +1063,122 @@ final class TelemetryReceiver: ObservableObject {
         
         return filtered
     }
+    
+    // MARK: - Learned Bounds Persistence
+    
+    private struct CodableTrackBounds: Codable {
+        let minX: Float
+        let maxX: Float
+        let minZ: Float
+        let maxZ: Float
+    }
+    
+    private func saveLearnedTrackBounds() {
+        let encoder = JSONEncoder()
+        let codableBounds = learnedTrackBounds.mapValues { bounds in
+            CodableTrackBounds(minX: bounds.minX, maxX: bounds.maxX, minZ: bounds.minZ, maxZ: bounds.maxZ)
+        }
+        if let data = try? encoder.encode(codableBounds) {
+            UserDefaults.standard.set(data, forKey: "learnedTrackBounds")
+        }
+    }
+    
+    private func loadLearnedTrackBounds() {
+        guard let data = UserDefaults.standard.data(forKey: "learnedTrackBounds") else { return }
+        let decoder = JSONDecoder()
+        if let codableBounds = try? decoder.decode([String: CodableTrackBounds].self, from: data) {
+            learnedTrackBounds = codableBounds.mapValues { bounds in
+                (minX: bounds.minX, maxX: bounds.maxX, minZ: bounds.minZ, maxZ: bounds.maxZ)
+            }
+        }
+    }
+    
+    // MARK: - New Track Learning UX
+    
+    /// Start recording a new track outline (user-initiated)
+    func startTrackRecording() {
+        guard !trackName.isEmpty else { return }
+        
+        isRecordingTrack = true
+        allCarsRecentPositions = Array(repeating: [], count: 22) // Reset for clean recording
+        
+        #if DEBUG
+        print("TelemetryReceiver: 🎬 Started recording track: \(trackName)")
+        #endif
+    }
+    
+    /// Stop recording and save the learned track
+    func stopTrackRecording() {
+        guard isRecordingTrack else { return }
+        
+        isRecordingTrack = false
+        
+        // Generate the final track outline from recorded data
+        let outline = generateTrackOutlineFromAllCars()
+        
+        if !outline.isEmpty {
+            // Save the learned track
+            saveLearnedTrack(trackName: trackName, outline: outline)
+            trackOutlinePoints = outline
+            isTrackLearned = true
+            
+            #if DEBUG
+            print("TelemetryReceiver: ✅ Saved learned track '\(trackName)' with \(outline.count) points")
+            #endif
+        } else {
+            #if DEBUG
+            print("TelemetryReceiver: ❌ Failed to generate track outline for '\(trackName)'")
+            #endif
+        }
+    }
+    
+    /// Check if we should instantly load a saved track (called when track changes)
+    private func tryLoadSavedTrack() {
+        guard !trackName.isEmpty else { return }
+        
+        // First, try to load prebuilt track data (instant, no setup needed!)
+        if let prebuiltTrack = PrebuiltTrackData.getTrack(name: trackName) {
+            trackOutlinePoints = prebuiltTrack.points
+            isTrackLearned = true
+            isRecordingTrack = false
+            
+            // Check if we have learned bounds for this prebuilt track
+            if learnedTrackBounds[trackName] != nil {
+                #if DEBUG
+                print("TelemetryReceiver: 🚀 Instantly loaded PREBUILT track '\(trackName)' with \(prebuiltTrack.points.count) points")
+                print("TelemetryReceiver: ⚡ Using previously learned bounds - perfect alignment!")
+                #endif
+            } else {
+                #if DEBUG
+                print("TelemetryReceiver: 🚀 Instantly loaded PREBUILT track '\(trackName)' with \(prebuiltTrack.points.count) points")
+                print("TelemetryReceiver: 📍 Will learn car position bounds dynamically (~3 seconds)")
+                #endif
+            }
+            return
+        }
+        
+        // Fallback: try user-recorded track data
+        if hasLearnedTrack(trackName: trackName) {
+            if let outline = loadTrackOutline(trackName: trackName) {
+                trackOutlinePoints = outline
+                isTrackLearned = true
+                isRecordingTrack = false
+                
+                #if DEBUG
+                print("TelemetryReceiver: ⚡ Loaded user-recorded track '\(trackName)' with \(outline.count) points")
+                #endif
+            }
+        } else {
+            // No track data available - user needs to record it
+            trackOutlinePoints = []
+            isTrackLearned = false
+            isRecordingTrack = false
+            
+            #if DEBUG
+            print("TelemetryReceiver: 📝 Track '\(trackName)' has no data - user can record it")
+            #endif
+        }
+    }
 }
 
 // MARK: - Data helpers
@@ -1290,14 +1426,10 @@ extension TelemetryReceiver {
                 guard let self else { return }
                 if self.trackName != name {
                     print("Session: trackId=\(id) → \(name)")
-                    // Save current track outline before switching
-                    if !self.trackName.isEmpty && !self.trackOutlinePoints.isEmpty {
-                        self.saveTrackOutline(for: self.trackName)
-                    }
                     self.trackName = name
                     self.resetTrackBounds()
-                    // Load saved outline for new track
-                    self.loadTrackOutline(for: name)
+                    // Try to instantly load saved track outline
+                    self.tryLoadSavedTrack()
                 }
             }
         }
