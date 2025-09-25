@@ -79,22 +79,28 @@ final class TelemetryReceiver: ObservableObject {
     }
 
     // MARK: - Start/Stop
-    func startListening() {
+    func startListening(port: UInt16 = 20777) {
         guard listener == nil else { return }
         
         do {
             let params = NWParameters.udp
             params.allowLocalEndpointReuse = true
-            listener = try NWListener(using: params, on: 20777)
+            params.allowFastOpen = true
+            
+            listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
             
             listener?.stateUpdateHandler = { [weak self] state in
                 DispatchQueue.main.async {
                     switch state {
                     case .ready:
-                        print("TelemetryReceiver: Ready, listening on port 20777")
+                        print("TelemetryReceiver: Ready, listening on port \(port)")
                     case .failed(let error):
                         print("TelemetryReceiver: Failed with error: \(error)")
                         self?.listener = nil
+                        // Retry after a short delay
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                            self?.startListening(port: port)
+                        }
                     case .cancelled:
                         print("TelemetryReceiver: Cancelled")
                         self?.listener = nil
@@ -130,9 +136,20 @@ final class TelemetryReceiver: ObservableObject {
         connection?.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
+                #if DEBUG
+                print("TelemetryReceiver: UDP connection ready")
+                #endif
                 self?.receiveData()
             case .failed(let error):
                 print("TelemetryReceiver: Connection failed: \(error)")
+                // For UDP, connection failures are common - just restart receiving
+                DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+                    self?.receiveData()
+                }
+            case .cancelled:
+                #if DEBUG
+                print("TelemetryReceiver: Connection cancelled")
+                #endif
             default:
                 break
             }
@@ -142,29 +159,45 @@ final class TelemetryReceiver: ObservableObject {
     }
     
     private func receiveData() {
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 2048) { [weak self] data, _, isComplete, error in
+        guard let connection = connection else { return }
+        
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 2048) { [weak self] data, _, isComplete, error in
             if let data = data, !data.isEmpty {
                 self?.processPacket(data)
             }
             
             if let error = error {
                 print("TelemetryReceiver: Receive error: \(error)")
+                // For UDP, errors are common - just keep trying
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+                    self?.receiveData()
+                }
                 return
             }
             
-            if !isComplete {
-                self?.receiveData()
-            }
+            // Continue receiving (UDP is connectionless, so we keep receiving)
+            self?.receiveData()
         }
     }
 
     // MARK: - Demux
     private func processPacket(_ data: Data) {
-        guard data.count >= 24 else { return }
+        guard data.count >= 24 else { 
+            #if DEBUG
+            print("TelemetryReceiver: Packet too small (\(data.count) bytes)")
+            #endif
+            return 
+        }
         
         let header = data.withUnsafeBytes { bytes in
             bytes.load(fromByteOffset: 0, as: PacketHeader.self)
         }
+        
+        #if DEBUG
+        if packetCount % 60 == 0 { // Log every 60 packets (~1 second)
+            print("TelemetryReceiver: Received packet ID \(header.packetId), count: \(packetCount)")
+        }
+        #endif
         
         DispatchQueue.main.async {
             self.packetCount += 1
@@ -178,7 +211,13 @@ final class TelemetryReceiver: ObservableObject {
         case 6: parseCarTelemetry(data, header: header)
         case 7: parseCarStatus(data, header: header)
         case 11: parseSessionHistory(data, header: header)
-        default: break
+        default: 
+            #if DEBUG
+            if packetCount % 100 == 0 {
+                print("TelemetryReceiver: Unknown packet ID \(header.packetId)")
+            }
+            #endif
+            break
         }
     }
 
@@ -315,14 +354,24 @@ final class TelemetryReceiver: ObservableObject {
     }
     
     private func parseCarTelemetry(_ data: Data, header: PacketHeader) {
-        guard data.count >= MemoryLayout<PacketCarTelemetryData>.size else { return }
+        guard data.count >= MemoryLayout<PacketCarTelemetryData>.size else { 
+            #if DEBUG
+            print("TelemetryReceiver: CarTelemetry packet too small")
+            #endif
+            return 
+        }
         
         let telemetry = data.withUnsafeBytes { bytes in
             bytes.load(fromByteOffset: 0, as: PacketCarTelemetryData.self)
         }
         
         let playerIndex = Int(header.playerCarIndex)
-        guard playerIndex < 22 else { return }
+        guard playerIndex < 22 else { 
+            #if DEBUG
+            print("TelemetryReceiver: Invalid player index \(playerIndex)")
+            #endif
+            return 
+        }
         
         let carTelemetryData = withUnsafeBytes(of: telemetry.carTelemetryData) { bytes in
             bytes.bindMemory(to: CarTelemetryData.self)
@@ -338,6 +387,12 @@ final class TelemetryReceiver: ObservableObject {
             self.throttle = playerCar.throttle
             self.brake = Double(playerCar.brake)
             self.drsOpen = playerCar.drs == 1
+            
+            #if DEBUG
+            if self.packetCount % 60 == 0 { // Log every ~1 second
+                print("TelemetryReceiver: Speed=\(self.speedKmh)km/h, RPM=\(self.rpm), Gear=\(self.gear)")
+            }
+            #endif
             
             // Update brake temperatures
             self.brakeTemps = [

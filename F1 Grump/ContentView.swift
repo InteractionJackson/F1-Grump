@@ -158,11 +158,11 @@ struct ContentView: View {
             SettingsView()
         }
         .onAppear {
-            rx.startListening()
+            rx.startListening(port: UInt16(udpPort))
         }
         .onChange(of: udpPort) { _, newPort in
             rx.stopListening()
-            rx.startListening()
+            rx.startListening(port: UInt16(newPort))
         }
         
         .onDisappear {
@@ -533,8 +533,8 @@ struct LapSplitsView: View {
                         let overall = rx.overallBestSectorMS
 
                         #if DEBUG
-                        let _ = print("Splits: current=\(current), last=\(last), best=\(best), overall=\(overall)")
-                        let _ = print("Splits: lastLapMS=\(rx.lastLapMS), bestLapMS=\(rx.bestLapMS), currentLapMS=\(rx.currentLapMS)")
+                        // Debug: Splits data (remove in production)
+                        // print("Splits: current=\(current), last=\(last), best=\(best), overall=\(overall)")
                         #endif
 
                         let s1Shown = last[0] > 0 ? last[0] : current[0]
@@ -1724,71 +1724,5 @@ private struct CapDots: View {
 // Hex color helper
 // Removed: Color(hex:) extension moved to Theme.swift to avoid duplication
 
-// MARK: - Driver Order Components
-struct DriverOrderListView: View {
-    let items: [DriverOrderItem]
-    
-    var body: some View {
-        if items.isEmpty {
-            Text("No driver data available")
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(items.indices, id: \.self) { index in
-                        DriverOrderRow(item: items[index])
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-        }
-    }
-}
-
-struct DriverOrderRow: View {
-    let item: DriverOrderItem
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Position
-            Text("\(item.position)")
-                .font(.caption.weight(.bold))
-                .foregroundColor(.white)
-                .frame(width: 24, height: 24)
-                .background(Circle().fill(Color.white.opacity(0.2)))
-            
-            // Team color indicator
-            Circle()
-                .fill(TeamColors.colorForTeam(item.teamId))
-                .frame(width: 8, height: 8)
-            
-            // Driver name
-            Text(item.name)
-                .font(.caption)
-                .foregroundColor(.textPrimary)
-                .lineLimit(1)
-            
-            Spacer()
-            
-            // Lap time
-            Text(formatTime(item.lapTime))
-                .font(.caption.monospacedDigit())
-                .foregroundColor(.textSecondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.white.opacity(0.05))
-        )
-    }
-    
-    private func formatTime(_ time: TimeInterval) -> String {
-        if time <= 0 { return "--:--.---" }
-        let minutes = Int(time) / 60
-        let seconds = time.truncatingRemainder(dividingBy: 60)
-        return String(format: "%d:%06.3f", minutes, seconds)
-    }
-}
+// MARK: - Driver Order Components (using existing DriverOrderListView above)
 
