@@ -99,12 +99,36 @@ struct F1TrackGenerator {
     }
     
     static func generateMonaco() -> TrackData {
-        // Monaco - Iconic street circuit
+        // Monaco - Iconic street circuit with distinctive harbor layout
         let points = createTrackPoints([
-            (0.3, 0.1), (0.5, 0.1), (0.65, 0.15), (0.8, 0.25),
-            (0.9, 0.4), (0.85, 0.6), (0.75, 0.75), (0.6, 0.8),
-            (0.4, 0.85), (0.25, 0.8), (0.15, 0.65), (0.1, 0.45),
-            (0.15, 0.3), (0.25, 0.2), (0.3, 0.1)
+            // Start/finish straight
+            (0.25, 0.1), (0.35, 0.1), (0.45, 0.11),
+            // Sainte Devote (Turn 1)
+            (0.52, 0.13), (0.58, 0.17), (0.63, 0.22),
+            // Uphill to Casino Square
+            (0.67, 0.28), (0.7, 0.35), (0.72, 0.42),
+            // Casino complex and Mirabeau
+            (0.73, 0.49), (0.72, 0.56), (0.69, 0.62),
+            // Grand Hotel Hairpin
+            (0.65, 0.67), (0.6, 0.71), (0.54, 0.73),
+            // Portier and tunnel entrance
+            (0.47, 0.74), (0.4, 0.73), (0.34, 0.71),
+            // Through tunnel (invisible section)
+            (0.28, 0.68), (0.23, 0.64), (0.19, 0.59),
+            // Harbor chicane
+            (0.16, 0.53), (0.15, 0.47), (0.16, 0.41),
+            (0.18, 0.35), (0.21, 0.3), (0.25, 0.26),
+            // Swimming pool section
+            (0.3, 0.22), (0.36, 0.19), (0.42, 0.17),
+            // La Rascasse and Anthony Noghès
+            (0.48, 0.16), (0.54, 0.15), (0.6, 0.15),
+            (0.66, 0.16), (0.71, 0.18), (0.75, 0.21),
+            (0.78, 0.25), (0.8, 0.3), (0.81, 0.35),
+            (0.8, 0.4), (0.78, 0.44), (0.75, 0.47),
+            (0.71, 0.49), (0.66, 0.5), (0.6, 0.49),
+            (0.54, 0.47), (0.48, 0.44), (0.43, 0.4),
+            (0.38, 0.35), (0.34, 0.29), (0.31, 0.23),
+            (0.29, 0.17), (0.27, 0.13), (0.25, 0.1)
         ])
         return TrackData("Monaco", points, (-400, 600, -500, 500), 1.0)
     }
@@ -121,12 +145,29 @@ struct F1TrackGenerator {
     }
     
     static func generateSilverstone() -> TrackData {
-        // Silverstone - Home of British GP
+        // Silverstone - Fast flowing British circuit with distinctive layout
         let points = createTrackPoints([
-            (0.5, 0.1), (0.65, 0.1), (0.75, 0.15), (0.85, 0.25),
-            (0.9, 0.4), (0.85, 0.55), (0.8, 0.7), (0.7, 0.85),
-            (0.55, 0.9), (0.4, 0.85), (0.25, 0.75), (0.15, 0.6),
-            (0.1, 0.4), (0.15, 0.25), (0.3, 0.15), (0.5, 0.1)
+            // Start/finish straight
+            (0.5, 0.1), (0.58, 0.1), (0.65, 0.11),
+            // Abbey and Farm Curve
+            (0.71, 0.13), (0.76, 0.16), (0.8, 0.2),
+            // Village and The Loop
+            (0.83, 0.25), (0.85, 0.31), (0.86, 0.37),
+            // Aintree and Wellington Straight
+            (0.86, 0.44), (0.85, 0.51), (0.83, 0.57),
+            // Brooklands and Luffield
+            (0.8, 0.62), (0.76, 0.67), (0.71, 0.71),
+            // Woodcote and back straight
+            (0.65, 0.74), (0.58, 0.76), (0.51, 0.77),
+            (0.44, 0.76), (0.37, 0.74), (0.31, 0.71),
+            // Copse Corner
+            (0.26, 0.67), (0.22, 0.62), (0.19, 0.56),
+            // Maggotts and Becketts complex
+            (0.17, 0.49), (0.16, 0.42), (0.17, 0.35),
+            (0.19, 0.29), (0.22, 0.24), (0.26, 0.2),
+            // Chapel and Hangar Straight
+            (0.31, 0.17), (0.37, 0.15), (0.44, 0.14),
+            (0.5, 0.13), (0.5, 0.1)
         ])
         return TrackData("Silverstone", points, (-800, 1200, -1000, 600), 1.6)
     }
@@ -143,12 +184,36 @@ struct F1TrackGenerator {
     }
     
     static func generateSpa() -> TrackData {
-        // Spa-Francorchamps - Legendary Ardennes circuit
+        // Spa-Francorchamps - Legendary triangle layout through Ardennes forest
         let points = createTrackPoints([
-            (0.2, 0.1), (0.4, 0.05), (0.6, 0.1), (0.8, 0.2),
-            (0.9, 0.4), (0.85, 0.6), (0.75, 0.75), (0.6, 0.85),
-            (0.4, 0.9), (0.25, 0.85), (0.15, 0.7), (0.1, 0.5),
-            (0.12, 0.3), (0.2, 0.1)
+            // Start/finish straight and La Source hairpin
+            (0.3, 0.1), (0.4, 0.08), (0.5, 0.07), (0.6, 0.08),
+            (0.68, 0.11), (0.74, 0.16), (0.78, 0.22),
+            // Raidillon and Kemmel Straight (Eau Rouge complex)
+            (0.8, 0.29), (0.81, 0.36), (0.81, 0.43),
+            // Les Combes and Malmedy
+            (0.8, 0.5), (0.78, 0.56), (0.75, 0.61),
+            // Rivage and Pouhon (flowing section)
+            (0.71, 0.65), (0.66, 0.68), (0.6, 0.7),
+            (0.54, 0.71), (0.48, 0.71), (0.42, 0.7),
+            // Campus and Bruxelles (chicane area)
+            (0.36, 0.68), (0.31, 0.65), (0.27, 0.61),
+            (0.24, 0.56), (0.22, 0.5), (0.21, 0.44),
+            // Blanchimont (high-speed corner)
+            (0.21, 0.38), (0.22, 0.32), (0.24, 0.27),
+            // Final chicane and back to start
+            (0.27, 0.22), (0.31, 0.18), (0.36, 0.15),
+            (0.42, 0.13), (0.48, 0.12), (0.54, 0.11),
+            (0.6, 0.11), (0.66, 0.12), (0.71, 0.14),
+            (0.75, 0.17), (0.78, 0.21), (0.8, 0.26),
+            // Bus Stop chicane
+            (0.81, 0.32), (0.8, 0.38), (0.78, 0.43),
+            (0.75, 0.47), (0.71, 0.5), (0.66, 0.52),
+            (0.6, 0.53), (0.54, 0.53), (0.48, 0.52),
+            (0.42, 0.5), (0.36, 0.47), (0.31, 0.43),
+            (0.27, 0.38), (0.24, 0.32), (0.22, 0.26),
+            (0.21, 0.2), (0.22, 0.14), (0.25, 0.11),
+            (0.3, 0.1)
         ])
         return TrackData("Spa", points, (-1000, 1000, -1200, 800), 1.8)
     }
@@ -186,12 +251,23 @@ struct F1TrackGenerator {
     }
     
     static func generateYasMarina() -> TrackData {
-        // Yas Marina Circuit - Twilight race in Abu Dhabi
+        // Yas Marina Circuit - Complex marina layout with distinctive shape
         let points = createTrackPoints([
-            (0.5, 0.1), (0.7, 0.12), (0.85, 0.25), (0.9, 0.45),
-            (0.85, 0.65), (0.7, 0.8), (0.5, 0.85), (0.3, 0.8),
-            (0.15, 0.65), (0.1, 0.45), (0.15, 0.25), (0.3, 0.12),
-            (0.5, 0.1)
+            // Start/finish straight
+            (0.5, 0.1), (0.58, 0.1), (0.66, 0.11),
+            // Turn 1-2 complex
+            (0.74, 0.14), (0.81, 0.19), (0.86, 0.26), (0.89, 0.34),
+            // Sector 1 flowing section
+            (0.91, 0.42), (0.92, 0.51), (0.91, 0.59), (0.88, 0.67),
+            // Marina section with tight corners
+            (0.84, 0.74), (0.78, 0.79), (0.71, 0.83), (0.63, 0.86),
+            (0.54, 0.87), (0.45, 0.87), (0.36, 0.85), (0.28, 0.82),
+            // Hotel section complex
+            (0.21, 0.78), (0.15, 0.73), (0.11, 0.67), (0.08, 0.6),
+            (0.07, 0.52), (0.08, 0.44), (0.11, 0.37), (0.15, 0.31),
+            // Final sector back to start
+            (0.21, 0.26), (0.28, 0.22), (0.36, 0.19), (0.44, 0.17),
+            (0.5, 0.16), (0.52, 0.13), (0.5, 0.1)
         ])
         return TrackData("Yas Marina", points, (-1100, 900, -900, 1100), 1.4)
     }

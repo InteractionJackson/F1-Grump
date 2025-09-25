@@ -47,6 +47,17 @@ extension Color {
     static let appBGEnd          = Color.p3(0.074, 0.051, 0.086) // #130D16
     static let gaugeLabel        = Color.white.opacity(0.5)
     static let labelEmphasised   = Color.white.opacity(0.5)
+    
+    // Hex color initializer
+    init(hex: String) {
+        let s = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var i: UInt64 = 0
+        Scanner(string: s).scanHexInt64(&i)
+        let r = Double((i >> 16) & 0xFF) / 255
+        let g = Double((i >> 8) & 0xFF) / 255
+        let b = Double(i & 0xFF) / 255
+        self.init(.sRGB, red: r, green: g, blue: b, opacity: 1)
+    }
 }
 
 // MARK: - Typography tokens (Figma)
