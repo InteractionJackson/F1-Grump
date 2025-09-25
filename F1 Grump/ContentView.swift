@@ -448,9 +448,90 @@ struct ContentView: View {
                 offsetX: 0,
                 offsetY: 0
             )
-        case "Qatar":
+        case "Qatar", "Losail":
             return TrackConfiguration(
                 svgAssetName: "Lusail",
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Paul Ricard":
+            return TrackConfiguration(
+                svgAssetName: "Silverstone", // Fallback: Paul Ricard SVG not available
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Abu Dhabi":
+            return TrackConfiguration(
+                svgAssetName: "Yas Marina",
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Austria":
+            return TrackConfiguration(
+                svgAssetName: "Red Bull Ring",
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Brazil":
+            return TrackConfiguration(
+                svgAssetName: "Interlagos",
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Shanghai":
+            return TrackConfiguration(
+                svgAssetName: "Shanghai",
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Austin":
+            return TrackConfiguration(
+                svgAssetName: "Circuit of the Americas",
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Sochi":
+            return TrackConfiguration(
+                svgAssetName: "Silverstone", // Fallback: Sochi SVG not available
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Hockenheim":
+            return TrackConfiguration(
+                svgAssetName: "Silverstone", // Fallback: Hockenheim SVG not available
+                rotationDegrees: 0,
+                flipHorizontally: false,
+                scaleFactor: 1.0,
+                offsetX: 0,
+                offsetY: 0
+            )
+        case "Portimao":
+            return TrackConfiguration(
+                svgAssetName: "Silverstone", // Fallback: Portimao SVG not available
                 rotationDegrees: 0,
                 flipHorizontally: false,
                 scaleFactor: 1.0,

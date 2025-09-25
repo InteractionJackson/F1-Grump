@@ -197,6 +197,11 @@ final class TelemetryReceiver: ObservableObject {
         if packetCount % 60 == 0 { // Log every 60 packets (~1 second)
             print("TelemetryReceiver: Received packet ID \(header.packetId), count: \(packetCount)")
         }
+        
+        // Log packet types for debugging
+        if packetCount % 300 == 0 { // Every 5 seconds
+            print("TelemetryReceiver: Recent packet types - ID \(header.packetId) (0=Motion, 1=Session, 2=Lap, 4=Participants, 6=Telemetry, 7=Status)")
+        }
         #endif
         
         DispatchQueue.main.async {
@@ -223,7 +228,19 @@ final class TelemetryReceiver: ObservableObject {
 
     // MARK: - Parsers
     private func parseMotion(_ data: Data, header: PacketHeader) {
-        guard data.count >= MemoryLayout<PacketMotionData>.size else { return }
+        guard data.count >= MemoryLayout<PacketMotionData>.size else { 
+            #if DEBUG
+            print("TelemetryReceiver: Motion packet too small (\(data.count) bytes)")
+            #endif
+            return 
+        }
+        
+        #if DEBUG
+        // Log motion packets occasionally
+        if packetCount % 180 == 0 { // Every ~3 seconds
+            print("TelemetryReceiver: Processing motion packet, \(header.numActiveCars) cars")
+        }
+        #endif
         
         let motion = data.withUnsafeBytes { bytes in
             bytes.load(fromByteOffset: 0, as: PacketMotionData.self)
@@ -297,6 +314,13 @@ final class TelemetryReceiver: ObservableObject {
             self.carPoints = points
             self.worldAspect = CGFloat(dx / dz)
             
+            #if DEBUG
+            // Log car positions occasionally
+            if self.packetCount % 180 == 0 && !points.isEmpty { // Every ~3 seconds
+                print("TelemetryReceiver: Updated \(points.count) car positions, player at \(playerIndex < points.count ? points[playerIndex] : CGPoint.zero)")
+            }
+            #endif
+            
             // Keep player position trail
             let p = points.indices.contains(playerIndex) ? points[playerIndex] : .zero
             self.recentPositions.append(p)
@@ -315,6 +339,18 @@ final class TelemetryReceiver: ObservableObject {
         
         // Extract track name
         let trackId = Int(session.trackId)
+        
+        // Filter out invalid track IDs to reduce noise
+        guard trackId >= 0 && trackId <= 29 else {
+            #if DEBUG
+            // Only log extreme invalid IDs to avoid spam
+            if abs(trackId) > 100 {
+                print("TelemetryReceiver: Ignoring invalid track ID: \(trackId)")
+            }
+            #endif
+            return
+        }
+        
         let newTrackName = trackIdToName(trackId)
         
         DispatchQueue.main.async {
